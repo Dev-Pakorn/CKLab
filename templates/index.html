@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Check-in | Computer Lab</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='user_style.css') }}">
+    <!-- เพิ่ม FontAwesome ให้มีไอคอนสวยๆ (Optional) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+
+    <section class="user-container">
+        <div class="login-card">
+            
+            <div class="text-center mb-4">
+                <div class="mb-2"> 
+                    <img src="{{ url_for('static', filename='img/logo.png') }}" alt="Logo" class="logo-img" onerror="this.style.display='none'">
+                </div>
+                <h2 class="page-title">ลงชื่อเข้าใช้ห้อง Lab</h2>
+            </div>
+            
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+            <div class="login-card-content mt-4">
+                
+                <div class="tab-container">
+                    <button onclick="switchMode('manual')" id="btnManual" class="tab-btn active">⌨️ พิมพ์รหัส</button>
+                    <button onclick="switchMode('qr')" id="btnQR" class="tab-btn">📱 QR Code</button>
+                </div>
+
+                <div id="viewManual">
+                    <form id="checkinForm" onsubmit="handleCheckIn(event)">
+                        
+                        <div class="mb-4">
+                            <input type="text" id="studentId" class="input-field" placeholder="กรอกรหัสนักศึกษา 6XXXXX" autocomplete="off" inputmode="numeric" autofocus style="letter-spacing: 0;">
+                        </div>
+
+                        <div class="mb-4">
+                            <label class="form-label">1. รูปแบบการเข้าใช้</label>
+                            <div class="radio-group">
+                                <label class="selection-card bg-gray">
+                                    <input type="radio" name="accessType" value="booking" checked>
+                                    <span>📅 จองมา</span>
+                                </label>
+                                <label class="selection-card bg-gray">
+                                    <input type="radio" name="accessType" value="walkin">
+                                    <span>🚶 Walk-in</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
+                            <label class="form-label">2. วัตถุประสงค์</label>
+                            <div class="radio-group">
+                                <label class="selection-card usage-computer">
+                                    <input type="radio" name="usageType" value="computer" checked onchange="toggleAiSelect(false)">
+                                    <span>💻 คอมฯ ทั่วไป</span>
+                                </label>
+                                <label class="selection-card usage-ai">
+                                    <input type="radio" name="usageType" value="ai" onchange="toggleAiSelect(true)">
+                                    <span>🤖 ใช้งาน AI</span>
+                                </label>
+                            </div>
+                            
+                            <!-- 🌟 NEW: ส่วนเลือก AI Tool (ซ่อนอยู่ถ้าไม่เลือก AI) -->
+                            <div id="aiSelection" class="mt-2 hidden" style="animation: fadeIn 0.3s;">
+                                <select id="aiTool" class="input-field" style="padding: 10px; font-size: 0.9rem; margin-top: 5px;">
+                                    <option value="ChatGPT">🟢 ChatGPT</option>
+                                    <option value="Gemini">🔵 Google Gemini</option>
+                                    <option value="Midjourney">🎨 Midjourney</option>
+                                    <option value="Copilot">💻 GitHub Copilot</option>
+                                    <option value="Other">⚪ อื่นๆ</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary w-full" style="padding: 14px; font-size: 16px;">LOGIN</button>
+                    </form>
+                </div>
+
+                <div id="viewQR" class="hidden text-center">
+                    <p class="text-light mb-4 text-sm">สแกน QR Code นี้เพื่อเข้าใช้งานผ่านมือถือ</p>
+                    <div class="qr-container"><div id="qrcodeDisplay" class="flex justify-center"></div></div>
+                    <div class="ref-box">
+                         <p class="font-bold text-main">Ref Code: <span id="qrRefText" style="color: var(--success);">Loading...</span></p>
+                         <p class="text-light text-sm mt-2">(เปลี่ยนรหัสอัตโนมัติทุก 5 นาที)</p>
+                    </div>
+                    <button onclick="generateLoginQR()" class="btn btn-outline w-full justify-center">🔄 สร้างใหม่เดี๋ยวนี้</button>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+    <!-- Success Modal -->
+    <div id="successModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="icon-circle"><span class="success-icon">✓</span></div>
+            <h3 class="font-bold text-main" style="font-size: 20px; margin-bottom: 5px;">Check-in สำเร็จ!</h3>
+            <div class="bg-gray" style="padding: 15px; border-radius: 10px; margin: 20px 0;">
+                <p id="modalUserName" class="font-bold" style="color: var(--primary); font-size: 1.1rem; margin-bottom: 5px;">Loading...</p>
+                <p id="modalUserTime" class="text-light text-sm">Loading...</p>
+            </div>
+            <button onclick="closeModal()" class="btn btn-primary w-full justify-center">ตกลง</button>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <script>
+        // ฟังก์ชันเสริมสำหรับโชว์ Dropdown AI
+        function toggleAiSelect(show) {
+            const el = document.getElementById('aiSelection');
+            if(show) el.classList.remove('hidden');
+            else el.classList.add('hidden');
+        }
+    </script>
+</body>
+</html>

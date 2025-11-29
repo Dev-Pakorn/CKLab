@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard | Lab Access</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='admin_style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+    <nav class="admin-header">
+        <div class="flex items-center gap-2">
+            <span style="font-size: 24px;" role="img">📊</span>
+            <div>
+                <div class="font-bold" style="font-size: 1.1rem; color: var(--primary-dark);">Lab Monitor</div>
+                <div style="font-size: 0.8rem; color: var(--text-light);">ระบบจัดการการเข้าใช้ห้องปฏิบัติการ</div>
+            </div>
+        </div>
+        <div class="flex items-center gap-2">
+            <button onclick="window.location.reload()" class="btn btn-outline">🔄 Refresh</button>
+            <a href="{{ url_for('index') }}" class="btn btn-primary" style="text-decoration: none;">🏠 หน้า Check-in</a>
+        </div>
+    </nav>
+
+    <div class="admin-container">
+
+        <div class="admin-tabs" style="margin-bottom: 20px; display: flex; gap: 10px;">
+            <button id="tabBtnMonitor" class="btn btn-primary" onclick="switchAdminTab('monitor')">📡 Monitor (Real-time)</button>
+            <button id="tabBtnReport" class="btn btn-outline" onclick="switchAdminTab('report')">📈 สถิติและรายงาน (Report)</button>
+        </div>
+        
+        <!-- MONITOR VIEW -->
+        <div id="viewMonitor">
+            <div class="dashboard-grid">
+                <div class="stat-card" style="border-left: 4px solid var(--success);">
+                    <span class="stat-label">🟢 กำลังใช้งาน (Active)</span>
+                    <span class="stat-value" id="statActive">0</span>
+                </div>
+                <div class="stat-card" style="border-left: 4px solid var(--primary);">
+                    <span class="stat-label">📅 ใช้งานวันนี้ (Today)</span>
+                    <span class="stat-value" id="statToday">0</span>
+                </div>
+                <div class="stat-card" style="border-left: 4px solid var(--purple);">
+                    <span class="stat-label">🎓 นักศึกษา (Students)</span>
+                    <span class="stat-value" id="statStudent">0</span>
+                </div>
+                <div class="stat-card" style="border-left: 4px solid var(--warning);">
+                    <span class="stat-label">💻 ที่นั่งว่าง (Available)</span>
+                    <span class="stat-value" id="statSeats">40/40</span>
+                </div>
+            </div>
+
+            <!-- Filter & Table -->
+            <div class="filter-wrapper">
+                <div class="flex flex-wrap justify-between items-center gap-2">
+                    <div class="flex items-center gap-2">
+                        <span class="font-bold text-main">ช่วงเวลา:</span>
+                        <select id="timeFilter" class="filter-select" onchange="renderMonitorTable()">
+                            <option value="today">📅 วันนี้ (Today)</option>
+                            <option value="month">🗓️ เดือนนี้ (Month)</option>
+                            <option value="all">🗂️ ทั้งหมด (All)</option>
+                        </select>
+                    </div>
+                    <div class="search-box">
+                        <span class="search-icon">🔍</span>
+                        <input type="text" id="searchInput" onkeyup="renderMonitorTable()" placeholder="ค้นหาชื่อ, รหัสนักศึกษา...">
+                    </div>
+                    <button onclick="exportCSV()" class="btn btn-primary btn-sm">📥 Export CSV</button>
+                </div>
+                <div class="filter-row">
+                    <!-- แก้ไขชื่อตัวกรองให้ตรงกับตาราง -->
+                    <div class="filter-group"><span class="filter-label">ประเภทของผู้ใช้</span><select id="typeFilter" class="filter-select" onchange="renderMonitorTable()"><option value="all">ทั้งหมด (All)</option><option value="student">🎓 นักศึกษา</option><option value="teacher">👨‍🏫 อาจารย์</option><option value="staff">🏢 บุคลากร</option><option value="guest">👤 บุคคลทั่วไป</option></select></div>
+                    <div class="filter-group"><span class="filter-label">คณะ/หน่วยงาน</span><select id="facultyFilter" class="filter-select" onchange="renderMonitorTable()"><option value="all">🏢 ทุกคณะ</option></select></div>
+                    <div class="filter-group"><span class="filter-label">ชั้นปี</span><select id="yearFilter" class="filter-select" onchange="renderMonitorTable()"><option value="all">🎓 ทุกชั้นปี</option></select></div>
+                    <div class="filter-group"><span class="filter-label">โซน</span><select id="zoneFilter" class="filter-select" onchange="renderMonitorTable()"><option value="all">🪑 ทุกโซน</option></select></div>
+                    <div class="filter-group"><span class="filter-label">สถานะ</span><select id="statusFilter" class="filter-select" onchange="renderMonitorTable()"><option value="active">🟢 Active Only</option><option value="completed">⚪ Completed</option><option value="all">แสดงทั้งหมด</option></select></div>
+                    <button onclick="resetFilters()" class="btn btn-outline btn-sm" style="height: 38px; align-self: flex-end;">❌ Reset</button>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th class="sortable" onclick="handleSort('checkIn')">เวลาเข้า <span class="sort-icon">↕</span></th>
+                            <th>เวลาออก</th>
+                            <th class="sortable" onclick="handleSort('name')">ชื่อ - สกุล <span class="sort-icon">↕</span></th>
+                            
+                            <!-- เพิ่ม Class Sortable และ onclick ให้ครบทุกช่อง -->
+                            <th class="sortable" onclick="handleSort('type')">ประเภทของผู้ใช้ <span class="sort-icon">↕</span></th>
+                            <th class="sortable" onclick="handleSort('stdId')">รหัส/ID <span class="sort-icon">↕</span></th>
+                            <th class="sortable" onclick="handleSort('faculty')">คณะ/หน่วยงาน <span class="sort-icon">↕</span></th>
+                            <th class="sortable" onclick="handleSort('year')">ชั้นปี <span class="sort-icon">↕</span></th>
+                            <th class="sortable" onclick="handleSort('desk')">โต๊ะ <span class="sort-icon">↕</span></th>
+                            
+                            <th>วัตถุประสงค์</th> 
+                            <th>สถานะ</th>
+                        </tr>
+                    </thead>
+                    <tbody id="userTableBody"></tbody>
+                </table>
+            </div>
+            <div id="noDataMessage" class="hidden text-center mt-4 text-light">ไม่พบข้อมูลตามเงื่อนไขที่เลือก</div>
+        </div>
+
+        <!-- REPORT VIEW (คงเดิม) -->
+        <div id="viewReport" class="hidden">
+            <div class="filter-bar">
+                <div class="flex items-center gap-2 flex-wrap">
+                    <span class="font-bold text-main">📊 เลือกรายงาน:</span>
+                    <select id="reportType" class="filter-select" onchange="updateReport()">
+                        <option value="daily">รายวัน (Daily)</option>
+                        <option value="monthly" selected>รายเดือน (Monthly)</option>
+                        <option value="yearly">รายปี (Yearly)</option>
+                    </select>
+                    <input type="date" id="reportDate" class="filter-select" onchange="updateReport()">
+                    <button onclick="exportReportCSV()" class="btn btn-primary" style="padding: 8px 16px;">📥 Export CSV</button>
+                </div>
+            </div>
+            <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+                <div class="chart-wrapper" style="flex: 2; min-width: 300px;">
+                    <h4 class="text-center mb-2 font-bold text-main">📈 ปริมาณการใช้งาน (Usage Volume)</h4>
+                    <canvas id="usageChart"></canvas>
+                </div>
+                <div class="chart-wrapper" style="flex: 1; min-width: 300px;">
+                    <h4 class="text-center mb-2 font-bold text-main">🏆 AI ยอดนิยม (Top AI Tools)</h4>
+                    <canvas id="aiChart"></canvas>
+                </div>
+            </div>
+            <h3 class="mb-4 text-main mt-4">สรุปภาพรวม (Overview)</h3>
+            <div class="dashboard-grid">
+                <div class="stat-card"><span class="stat-label">👥 ผู้ใช้ทั้งหมด</span><span class="stat-value" id="repTotalUsers">0</span></div>
+                <div class="stat-card"><span class="stat-label">🎓 นักศึกษา</span><span class="stat-value" id="repStudentCount">0</span></div>
+                <div class="stat-card" style="border-left: 4px solid #f97316;"><span class="stat-label">⏱️ นั่งนานสุด (Max Duration)</span><span class="stat-value" style="font-size: 1.5rem;" id="repMaxDuration">-</span><span style="font-size: 0.8rem; color: #666;" id="repMaxUser"></span></div>
+                <div class="stat-card" style="border-left: 4px solid #8b5cf6;"><span class="stat-label">🤖 ใช้ AI (ครั้ง)</span><span class="stat-value" id="repAICount">0</span></div>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
