@@ -1,19 +1,44 @@
-// --- script.js (Fix: Restore Report Logic & Monthly View) ---
+// --- script.js (Final Version: Monitor + Report + User + Admin Check-in Purpose) ---
 
 const STORAGE_KEY = 'lab_access_db_v2';
+const DESK_CONFIG_KEY = 'lab_desk_config';
+const APP_CONFIG_KEY = 'lab_app_config';
 
 // Global Variables
 let dbData = [];
+let deskConfig = {}; 
+// 🌟 Config เริ่มต้น
+let appConfig = {
+    zones: [{ id: 'A', count: 20 }, { id: 'B', count: 20 }, { id: 'C', count: 20 }],
+    softwareList: [
+        "ChatGPT+", "Claude Pro", "Perplexity Pro", "Midjourney Basic", 
+        "SciSpace Premium", "Grammarly Pro", "Botnoi VOICE", "Gramma Pro", "Canva Pro"
+    ]
+};
 let chartInstance = null;
 let aiChartInstance = null;
 let currentSortCol = 'checkIn';
 let currentSortDir = 'desc';
+let currentMonitorView = 'table'; 
+let currentEditingDesk = null;
 
 // ============================================
-// 1. API CONNECTION
+// 1. API CONNECTION & CONFIG LOAD
 // ============================================
 async function loadAllData() {
     try {
+        // 1. โหลด Config (App & Desk) จาก LocalStorage
+        const storedApp = localStorage.getItem(APP_CONFIG_KEY);
+        if (storedApp) {
+            const parsed = JSON.parse(storedApp);
+            if (parsed.zones && parsed.zones.length > 0) appConfig.zones = parsed.zones;
+            if (parsed.softwareList && parsed.softwareList.length > 0) appConfig.softwareList = parsed.softwareList;
+        }
+        
+        const storedDesk = localStorage.getItem(DESK_CONFIG_KEY);
+        if (storedDesk) deskConfig = JSON.parse(storedDesk);
+
+        // 2. โหลด Logs จาก Server
         const response = await fetch(`/api/logs?t=${new Date().getTime()}`);
         if (!response.ok) throw new Error('Network response was not ok');
         return await response.json();
@@ -52,26 +77,34 @@ async function apiCheckOut(id) {
 // ============================================
 if (document.getElementById('viewMonitor')) {
     document.addEventListener('DOMContentLoaded', async () => {
+        console.log("Admin Dashboard Loaded");
         dbData = await loadAllData();
         
         populateDropdowns();
-        renderMonitorTable();
-        updateStats();
+        // renderConfigUI(); // ไม่แสดง Config UI ตามที่ขอ
+        renderMonitorData();
+        
+        if(document.getElementById('statActive')) updateStats();
 
         const dateInput = document.getElementById('reportDate');
         if(dateInput) dateInput.valueAsDate = new Date();
         
-        initChart();
-        initAIChart(); 
-        updateReport();
+        if (typeof Chart !== 'undefined') {
+            initChart();
+            initAIChart(); 
+            updateReport();
+        }
 
         setInterval(async () => {
             if(!document.getElementById('viewMonitor').classList.contains('hidden')){
-                const searchVal = document.getElementById('searchInput') ? document.getElementById('searchInput').value : '';
-                if(!searchVal) {
-                    dbData = await loadAllData();
-                    renderMonitorTable();
-                    updateStats();
+                const modal = document.getElementById('deskModal');
+                if (!modal || !modal.classList.contains('show')) {
+                    const searchVal = document.getElementById('searchInput') ? document.getElementById('searchInput').value : '';
+                    if(!searchVal) {
+                        dbData = await loadAllData(); 
+                        renderMonitorData();
+                        updateStats();
+                    }
                 }
             }
         }, 5000);
@@ -79,67 +112,286 @@ if (document.getElementById('viewMonitor')) {
 }
 
 // ============================================
-// 3. MONITOR LOGIC
+// 3. ADMIN: TAB & VIEW SWITCHING
 // ============================================
-function populateDropdowns() {
-    const faculties = [
-        "คณะวิทยาศาสตร์", "คณะเกษตรศาสตร์", "คณะวิศวกรรมศาสตร์", "คณะศิลปศาสตร์", "คณะเภสัชศาสตร์",
-        "คณะบริหารศาสตร์", "คณะพยาบาลศาสตร์", "วิทยาลัยแพทยศาสตร์และการสาธารณสุข", "คณะศิลปประยุกต์และสถาปัตยกรรมศาสตร์",
-        "คณะนิติศาสตร์", "คณะรัฐศาสตร์", "คณะศึกษาศาสตร์", "สำนักคอมพิวเตอร์และเครือข่าย",
-        "สำนักบริหารทรัพย์สินและสิทธิประโยชน์", "สำนักวิทยบริการ", "กองกลาง", "กองแผนงาน", "กองคลัง",
-        "กองบริการการศึกษา", "กองการเจ้าหน้าที่", "สำนักงานส่งเสริมและบริหารงานวิจัย ฯ", "สำนักงานพัฒนานักศึกษา",
-        "สำนักงานบริหารกายภาพและสิ่งแวดล้อม", "สำนักงานวิเทศสัมพันธ์", "สำนักงานกฏหมายและนิติการ",
-        "สำนักงานตรวจสอบภายใน", "สำนักงานรักษาความปลอดภัย", "สภาอาจารย์", "สหกรณ์ออมทรัพย์มหาวิทยาลัยอุบลราชธานี",
-        "อุทยานวิทยาศาสตร์มหาวิทยาลัยอุบลราชธานี", "ศูนย์การจัดการความรู้ (KM)",
-        "ศูนย์การเรียนรู้และพัฒนา \"งา\" เชิงเกษตรอุตสาหกรรมครัวเรือนแบบยั่งยืน", "สถานปฏิบัติการโรงแรมฯ (U-Place)",
-        "ศูนย์วิจัยสังคมอนุภาคลุ่มน้ำโขง ฯ", "ศูนย์เครื่องมือวิทยาศาสตร์", "โรงพิมพ์มหาวิทยาลัยอุบลราชธานี"
-    ];
+function switchAdminTab(tabName) {
+    const viewMonitor = document.getElementById('viewMonitor');
+    const viewReport = document.getElementById('viewReport');
+    const btnMonitor = document.getElementById('tabBtnMonitor');
+    const btnReport = document.getElementById('tabBtnReport');
 
-    const facSelect = document.getElementById('facultyFilter');
-    if(facSelect) {
-        facSelect.innerHTML = '<option value="all">🏢 ทุกคณะ/หน่วยงาน</option>';
-        faculties.forEach(f => {
-            const opt = document.createElement('option');
-            opt.value = f; opt.innerText = f;
-            facSelect.appendChild(opt);
+    if (!viewMonitor || !viewReport) return;
+
+    if (tabName === 'monitor') {
+        viewMonitor.classList.remove('hidden');
+        viewReport.classList.add('hidden');
+        btnMonitor.classList.remove('btn-outline'); btnMonitor.classList.add('btn-primary');
+        btnReport.classList.remove('btn-primary'); btnReport.classList.add('btn-outline');
+        
+        loadAllData().then(data => { 
+            dbData = data; 
+            renderMonitorData(); 
         });
-    }
-
-    const years = ['1', '2', '3', '4']; 
-    const yearSelect = document.getElementById('yearFilter');
-    if(yearSelect) {
-        yearSelect.innerHTML = '<option value="all">🎓 ทุกชั้นปี</option>';
-        years.forEach(y => {
-            const opt = document.createElement('option');
-            opt.value = y; opt.innerText = `ปี ${y}`;
-            yearSelect.appendChild(opt);
-        });
-        const optOther = document.createElement('option');
-        optOther.value = 'other'; optOther.innerText = 'อื่นๆ / ปี 4 ขึ้นไป';
-        yearSelect.appendChild(optOther);
-    }
-
-    const zones = [...new Set(dbData.map(u => u.desk ? u.desk.charAt(0).toUpperCase() : '').filter(z => z.match(/[A-Z]/)))].sort();
-    const zoneSelect = document.getElementById('zoneFilter');
-    if(zoneSelect) {
-        zoneSelect.innerHTML = '<option value="all">🪑 ทุกโซน</option>';
-        zones.forEach(z => {
-            const opt = document.createElement('option');
-            opt.value = z; opt.innerText = `โซน ${z}`;
-            zoneSelect.appendChild(opt);
+    } else {
+        viewMonitor.classList.add('hidden');
+        viewReport.classList.remove('hidden');
+        btnMonitor.classList.remove('btn-primary'); btnMonitor.classList.add('btn-outline');
+        btnReport.classList.remove('btn-outline'); btnReport.classList.add('btn-primary');
+        
+        loadAllData().then(data => { 
+            dbData = data; 
+            updateReport(); 
+            setTimeout(() => {
+                if (chartInstance) chartInstance.resize();
+                if (aiChartInstance) aiChartInstance.resize();
+            }, 50);
         });
     }
 }
 
-function resetFilters() {
-    ['typeFilter', 'facultyFilter', 'yearFilter', 'zoneFilter'].forEach(id => {
-        if(document.getElementById(id)) document.getElementById(id).value = 'all';
+function switchMonitorView(view) {
+    currentMonitorView = view;
+    document.getElementById('btnViewTable').classList.toggle('active', view === 'table');
+    document.getElementById('btnViewMap').classList.toggle('active', view === 'map');
+    
+    const tableWrapper = document.getElementById('monitorTableViewWrapper');
+    const mapView = document.getElementById('monitorMapView');
+
+    if (view === 'table') {
+        if(tableWrapper) tableWrapper.classList.remove('hidden');
+        if(mapView) mapView.classList.add('hidden');
+    } else {
+        if(tableWrapper) tableWrapper.classList.add('hidden');
+        if(mapView) mapView.classList.remove('hidden');
+    }
+    renderMonitorData();
+}
+
+function renderMonitorData() {
+    if (currentMonitorView === 'table') {
+        renderMonitorTable();
+    } else {
+        renderDeskMap();
+    }
+    updateStats();
+}
+
+// ============================================
+// 4. MAP RENDER & DESK MANAGEMENT
+// ============================================
+function renderDeskMap() {
+    const container = document.getElementById('deskMapContainer');
+    if(!container) return;
+    container.innerHTML = '';
+
+    const activeUsers = dbData.filter(u => u.status === 'active');
+    const zones = (appConfig.zones && appConfig.zones.length > 0) 
+                  ? appConfig.zones 
+                  : [{ id: 'A', count: 20 }, { id: 'B', count: 20 }, { id: 'C', count: 20 }];
+
+    zones.forEach(zone => {
+        const zoneDiv = document.createElement('div');
+        zoneDiv.className = 'zone-container';
+        zoneDiv.innerHTML = `<div class="zone-title">โซน ${zone.id} <span style="font-size:0.8rem; font-weight:400;">(${zone.count} ที่นั่ง)</span></div>`;
+        const grid = document.createElement('div');
+        grid.className = 'desk-grid';
+
+        for (let i = 1; i <= zone.count; i++) {
+            const deskId = `${zone.id}-${i.toString().padStart(2, '0')}`;
+            
+            const user = activeUsers.find(u => u.desk === deskId || u.desk === `${zone.id}-${i}`);
+            const config = deskConfig[deskId] || {};
+            const isMaintenance = config.status === 'maintenance';
+
+            const deskItem = document.createElement('div');
+            let statusClass = '', statusText = 'ว่าง', textColor = '#64748b';
+            
+            if (user) { 
+                statusClass = 'active'; statusText = 'ใช้งาน'; textColor = '#166534';
+            } else if (isMaintenance) { 
+                statusClass = 'maintenance'; statusText = 'ปิดซ่อม'; textColor = '#991b1b';
+            }
+
+            deskItem.className = `desk-item ${statusClass}`;
+            // โต๊ะว่างหรือซ่อมคลิกได้เพื่อจัดการ / โต๊ะมีคนคลิกเพื่อดูข้อมูลหรือ check-out
+            deskItem.onclick = () => openDeskModal(deskId, user, config);
+
+            let innerHTML = `<div class="desk-id" style="color:${textColor}">${deskId}</div><div class="desk-status">${statusText}</div>`;
+            
+            if (user) {
+                innerHTML += `<div class="desk-user">${user.name}</div>`;
+                if (user.purpose && user.purpose.startsWith('AI')) {
+                    let toolName = user.purpose.split(':')[1]?.trim() || 'AI';
+                    innerHTML += `<div class="desk-software-tag" style="background:#f3e8ff; color:#7e22ce; border:1px solid #d8b4fe;">🤖 ${toolName}</div>`;
+                }
+            } 
+            // ลบส่วนแสดง Software Tag ออก เพราะเราเปลี่ยนเป็น Purpose Selector แล้ว
+
+            deskItem.innerHTML = innerHTML;
+            grid.appendChild(deskItem);
+        }
+        zoneDiv.appendChild(grid);
+        container.appendChild(zoneDiv);
     });
-    if(document.getElementById('statusFilter')) document.getElementById('statusFilter').value = 'active'; 
-    if(document.getElementById('searchInput')) document.getElementById('searchInput').value = '';
-    renderMonitorTable();
 }
 
+// 🌟 ฟังก์ชันจัดการการแสดงผล Dropdown AI ใน Admin Modal
+function toggleAdminAiSelect(isAi) {
+    const select = document.getElementById('adminAiTool');
+    if (select) {
+        if (isAi) select.classList.remove('hidden');
+        else select.classList.add('hidden');
+    }
+}
+
+// 🌟 OPEN MODAL (Updated for Purpose Selection)
+function openDeskModal(deskId, user, config) {
+    currentEditingDesk = deskId;
+    const modal = document.getElementById('deskModal');
+    document.getElementById('modalDeskId').innerText = deskId;
+    
+    const statusSelect = document.getElementById('deskStatusSelect');
+    const userInfoSec = document.getElementById('userInfoSection');
+    const btnCheckout = document.getElementById('btnForceCheckout');
+
+    // ส่วน Container ที่เคยเป็น Checkbox เดิม
+    const container = document.getElementById('modalSoftwareCheckboxes');
+    // เปลี่ยน Label (ถ้าทำได้ผ่าน JS หรือแก้ใน HTML ถาวร)
+    const containerWrapper = container ? container.closest('.mb-4') : null;
+
+    if (user) {
+        // --- กรณีมีผู้ใช้งาน (Occupied) ---
+        statusSelect.value = 'occupied';
+        statusSelect.disabled = true; 
+        
+        userInfoSec.classList.remove('hidden');
+        userInfoSec.innerHTML = `
+            <p class="text-sm text-light">ผู้ใช้งานปัจจุบัน:</p>
+            <p class="font-bold" style="color: #166534; font-size: 1.1rem; margin-bottom:5px;">${user.name}</p>
+            <p class="text-sm">ID: <span style="font-family:monospace;">${user.stdId}</span></p>
+            <p class="text-sm">เวลาเข้า: ${user.checkIn}</p>
+            <p class="text-sm" style="color:${user.purpose.startsWith('AI')?'#9333ea':'#0369a1'}">วัตถุประสงค์: ${user.purpose}</p>
+            <button onclick="forceCheckoutFromModal(${user.id})" class="btn btn-sm btn-outline" style="width:100%; margin-top:10px; color:var(--danger); border-color:var(--danger);">
+                ออกจากระบบ (Check-out)
+            </button>
+        `;
+        
+        // ซ่อนส่วนเลือกวัตถุประสงค์ เพราะมีคนนั่งแล้ว
+        if (containerWrapper) containerWrapper.classList.add('hidden');
+
+    } else {
+        // --- กรณีโต๊ะว่าง (Available/Maintenance) ---
+        statusSelect.disabled = false;
+        statusSelect.value = config.status === 'maintenance' ? 'maintenance' : 'available';
+        
+        userInfoSec.classList.remove('hidden');
+        // Form Admin Check-in
+        userInfoSec.innerHTML = `
+            <div style="border-top:1px dashed #ddd; padding-top:10px; margin-top:5px;">
+                <p class="font-bold text-sm mb-2" style="color:var(--primary);">Admin Check-in (เพิ่มผู้ใช้)</p>
+                <input type="text" id="adminAddName" class="input-field" placeholder="ชื่อ-สกุล" style="width:100%; padding:8px; margin-bottom:5px; font-size:0.9rem;">
+                <input type="text" id="adminAddId" class="input-field" placeholder="รหัส/เบอร์โทร" style="width:100%; padding:8px; margin-bottom:5px; font-size:0.9rem;">
+                <select id="adminAddType" class="input-field" style="width:100%; padding:8px; font-size:0.9rem;">
+                    <option value="student">นักศึกษา</option>
+                    <option value="guest">บุคคลทั่วไป</option>
+                    <option value="staff">บุคลากร</option>
+                </select>
+            </div>
+        `;
+
+        // 🌟 สร้าง UI เลือกวัตถุประสงค์ (เหมือนหน้า Login)
+        if (container && containerWrapper) {
+            containerWrapper.classList.remove('hidden');
+            // เปลี่ยน Label ชั่วคราว
+            const label = containerWrapper.querySelector('label');
+            if(label) label.innerText = "วัตถุประสงค์การใช้งาน (สำหรับการเพิ่มผู้ใช้)";
+
+            container.className = ''; // ลบคลาส grid เดิมออก
+            container.innerHTML = `
+                <div class="radio-group" style="margin-bottom:10px; gap:5px;">
+                    <label class="selection-card usage-computer" style="padding:8px; font-size:0.85rem; flex:1;">
+                        <input type="radio" name="adminUsageType" value="computer" checked onchange="toggleAdminAiSelect(false)"> 💻 คอมฯ ทั่วไป
+                    </label>
+                    <label class="selection-card usage-ai" style="padding:8px; font-size:0.85rem; flex:1;">
+                        <input type="radio" name="adminUsageType" value="ai" onchange="toggleAdminAiSelect(true)"> 🤖 ใช้งาน AI
+                    </label>
+                </div>
+                <select id="adminAiTool" class="input-field hidden" style="padding:8px; width:100%; font-size:0.9rem; border:1px solid #9333ea;">
+                    ${appConfig.softwareList.map(s => `<option value="${s}">${s}</option>`).join('')}
+                    <option value="Other">Other</option>
+                </select>
+            `;
+        }
+    }
+
+    modal.classList.add('show');
+}
+
+// 🌟 SAVE LOGIC (UPDATED)
+async function saveDeskDetails() {
+    if (!currentEditingDesk) return;
+    
+    const status = document.getElementById('deskStatusSelect').value;
+    
+    // Check Admin Check-in Data
+    const adminName = document.getElementById('adminAddName')?.value.trim();
+    const adminId = document.getElementById('adminAddId')?.value.trim();
+    
+    if (adminName && adminId) {
+        // --- Perform Check-in ---
+        const type = document.getElementById('adminAddType').value;
+        
+        // Get Purpose
+        const usageEl = document.querySelector('input[name="adminUsageType"]:checked');
+        let purpose = 'Com';
+        if (usageEl && usageEl.value === 'ai') {
+            const tool = document.getElementById('adminAiTool').value;
+            purpose = `AI: ${tool}`;
+        }
+
+        const payload = {
+            name: adminName,
+            stdId: adminId,
+            faculty: 'Admin Added',
+            year: '-',
+            type: type,
+            desk: currentEditingDesk,
+            purpose: purpose
+        };
+        await apiCheckIn(payload);
+    } else {
+        // --- Update Desk Status Only ---
+        if (!deskConfig[currentEditingDesk]) deskConfig[currentEditingDesk] = {};
+        deskConfig[currentEditingDesk].status = status;
+        // ลบส่วนบันทึก Software ออก เพราะเปลี่ยนเป็น Purpose แล้ว
+        
+        localStorage.setItem(DESK_CONFIG_KEY, JSON.stringify(deskConfig));
+    }
+    
+    dbData = await loadAllData();
+    closeDeskModal();
+    renderDeskMap(); 
+    updateStats();
+}
+
+function closeDeskModal() {
+    document.getElementById('deskModal').classList.remove('show');
+    currentEditingDesk = null;
+}
+
+async function forceCheckoutFromModal(userId) {
+    if(confirm("ยืนยันการ Check-out ผู้ใช้งานรายนี้?")) {
+        await apiCheckOut(userId);
+        dbData = await loadAllData(); 
+        closeDeskModal();
+        renderDeskMap();
+        updateStats();
+    }
+}
+
+// ============================================
+// 5. MONITOR TABLE & STATS
+// ============================================
 function renderMonitorTable() {
     const tableBody = document.getElementById('userTableBody');
     if(!tableBody) return;
@@ -151,7 +403,6 @@ function renderMonitorTable() {
     const zoneFilter = document.getElementById('zoneFilter')?.value || 'all';
     const statusFilter = document.getElementById('statusFilter')?.value || 'active';
     const searchVal = document.getElementById('searchInput')?.value.toLowerCase() || '';
-    
     const todayStr = new Date().toISOString().split('T')[0];
 
     let filtered = dbData.filter(u => {
@@ -160,20 +411,16 @@ function renderMonitorTable() {
 
         let matchType = (typeFilter === 'all') || (u.type === typeFilter);
         let matchFaculty = (facultyFilter === 'all') || (u.faculty === facultyFilter);
-        
         let matchYear = true;
         if (yearFilter !== 'all') {
             if (yearFilter === 'other') matchYear = !['1','2','3','4'].includes(u.year); 
             else matchYear = (u.year === yearFilter);
         }
-
         let matchZone = (zoneFilter === 'all') || (u.desk && u.desk.toUpperCase().startsWith(zoneFilter));
         let matchStatus = (statusFilter === 'all') || (u.status === statusFilter);
-
         let matchSearch = !searchVal || 
                           (u.name && u.name.toLowerCase().includes(searchVal)) || 
-                          (u.stdId && u.stdId.toLowerCase().includes(searchVal)) ||
-                          (u.faculty && u.faculty.toLowerCase().includes(searchVal));
+                          (u.stdId && u.stdId.toLowerCase().includes(searchVal));
 
         return matchTime && matchType && matchFaculty && matchYear && matchZone && matchStatus && matchSearch;
     });
@@ -200,20 +447,15 @@ function renderMonitorTable() {
             let badgeClass = 'badge-guest';
             let typeLabel = user.type;
             if (user.type === 'student') { badgeClass = 'badge-student'; typeLabel = 'นักศึกษา'; }
-            if (user.type === 'teacher') { badgeClass = 'badge-teacher'; typeLabel = 'อาจารย์'; }
-            if (user.type === 'staff') { badgeClass = 'badge-staff'; typeLabel = 'บุคลากร'; }
-            if (user.type === 'guest') { typeLabel = 'บุคคลทั่วไป'; }
+            else if (user.type === 'teacher') { badgeClass = 'badge-teacher'; typeLabel = 'อาจารย์'; }
+            else if (user.type === 'staff') { badgeClass = 'badge-staff'; typeLabel = 'บุคลากร'; }
+            else if (user.type === 'guest') { typeLabel = 'บุคคลทั่วไป'; }
 
-            let displayPurpose = '';
-            let purposeColor = '#0369a1';
-            
+            let displayPurpose = '', purposeColor = '#0369a1';
             if (user.purpose && user.purpose.startsWith('AI')) {
                 let tool = user.purpose.split(':')[1] || '';
-                displayPurpose = `🤖 ใช้งาน AI ${tool}`;
-                purposeColor = '#9333ea';
-            } else {
-                displayPurpose = `💻 คอมฯ ทั่วไป`;
-            }
+                displayPurpose = `🤖 ใช้งาน AI ${tool}`; purposeColor = '#9333ea';
+            } else { displayPurpose = `💻 คอมฯ ทั่วไป`; }
 
             tr.innerHTML = `
                 <td>${user.checkIn}</td>
@@ -237,17 +479,37 @@ function renderMonitorTable() {
     }
 }
 
-function handleSort(column) {
-    if (currentSortCol === column) {
-        currentSortDir = currentSortDir === 'asc' ? 'desc' : 'asc';
-    } else {
-        currentSortCol = column;
-        currentSortDir = 'asc';
+function populateDropdowns() {
+    const faculties = ["คณะวิทยาศาสตร์", "คณะเกษตรศาสตร์", "คณะวิศวกรรมศาสตร์", "คณะศิลปศาสตร์", "คณะเภสัชศาสตร์", "คณะบริหารศาสตร์", "คณะพยาบาลศาสตร์", "วิทยาลัยแพทยศาสตร์และการสาธารณสุข", "คณะศิลปประยุกต์และสถาปัตยกรรมศาสตร์", "คณะนิติศาสตร์", "คณะรัฐศาสตร์", "คณะศึกษาศาสตร์", "สำนักคอมพิวเตอร์และเครือข่าย", "สำนักบริหารทรัพย์สินและสิทธิประโยชน์", "สำนักวิทยบริการ", "กองกลาง", "กองแผนงาน", "กองคลัง", "กองบริการการศึกษา", "กองการเจ้าหน้าที่", "สำนักงานส่งเสริมและบริหารงานวิจัย ฯ", "สำนักงานพัฒนานักศึกษา", "สำนักงานบริหารกายภาพและสิ่งแวดล้อม", "สำนักงานวิเทศสัมพันธ์", "สำนักงานกฏหมายและนิติการ", "สำนักงานตรวจสอบภายใน", "สำนักงานรักษาความปลอดภัย", "สภาอาจารย์", "สหกรณ์ออมทรัพย์มหาวิทยาลัยอุบลราชธานี", "อุทยานวิทยาศาสตร์มหาวิทยาลัยอุบลราชธานี", "ศูนย์การจัดการความรู้ (KM)", "ศูนย์การเรียนรู้และพัฒนา \"งา\" เชิงเกษตรอุตสาหกรรมครัวเรือนแบบยั่งยืน", "สถานปฏิบัติการโรงแรมฯ (U-Place)", "ศูนย์วิจัยสังคมอนุภาคลุ่มน้ำโขง ฯ", "ศูนย์เครื่องมือวิทยาศาสตร์", "โรงพิมพ์มหาวิทยาลัยอุบลราชธานี"];
+    const facSelect = document.getElementById('facultyFilter');
+    if(facSelect) {
+        facSelect.innerHTML = '<option value="all">🏢 ทุกคณะ/หน่วยงาน</option>';
+        faculties.forEach(f => { const opt = document.createElement('option'); opt.value = f; opt.innerText = f; facSelect.appendChild(opt); });
     }
+    const yearSelect = document.getElementById('yearFilter');
+    if(yearSelect) {
+        yearSelect.innerHTML = '<option value="all">🎓 ทุกชั้นปี</option>';
+        ['1','2','3','4'].forEach(y => { const opt = document.createElement('option'); opt.value = y; opt.innerText = `ปี ${y}`; yearSelect.appendChild(opt); });
+        const opt = document.createElement('option'); opt.value = 'other'; opt.innerText = 'อื่นๆ / ปี 4 ขึ้นไป'; yearSelect.appendChild(opt);
+    }
+    const zoneSelect = document.getElementById('zoneFilter');
+    if(zoneSelect) zoneSelect.innerHTML = '<option value="all">🪑 ทุกโซน</option><option value="A">โซน A</option><option value="B">โซน B</option><option value="C">โซน C</option>';
+}
+
+function resetFilters() {
+    ['typeFilter', 'facultyFilter', 'yearFilter', 'zoneFilter'].forEach(id => { if(document.getElementById(id)) document.getElementById(id).value = 'all'; });
+    if(document.getElementById('statusFilter')) document.getElementById('statusFilter').value = 'active'; 
+    if(document.getElementById('searchInput')) document.getElementById('searchInput').value = '';
+    renderMonitorData();
+}
+
+function handleSort(column) {
+    if (currentSortCol === column) { currentSortDir = currentSortDir === 'asc' ? 'desc' : 'asc'; } 
+    else { currentSortCol = column; currentSortDir = 'asc'; }
     document.querySelectorAll('.sort-icon').forEach(icon => icon.innerText = '↕');
     const header = document.querySelector(`th[onclick="handleSort('${column}')"] .sort-icon`);
     if(header) header.innerText = currentSortDir === 'asc' ? '↑' : '↓';
-    renderMonitorTable();
+    renderMonitorData();
 }
 
 async function toggleUserStatus(id, checkbox) {
@@ -258,7 +520,7 @@ async function toggleUserStatus(id, checkbox) {
             if(confirm(`ยืนยัน Check-out: ${dbData[idx].name}?`)) {
                 await apiCheckOut(id);
                 dbData = await loadAllData();
-                renderMonitorTable();
+                renderMonitorData();
                 updateStats();
             } else { checkbox.checked = true; }
         } else {
@@ -271,12 +533,17 @@ async function toggleUserStatus(id, checkbox) {
 function updateStats() {
     const todayStr = new Date().toISOString().split('T')[0];
     const activeCount = dbData.filter(u => u.status === 'active' && u.date === todayStr).length;
+    
+    let totalSeats = 0;
+    if (appConfig && appConfig.zones) {
+        appConfig.zones.forEach(z => totalSeats += z.count);
+    } else { totalSeats = 60; }
+
     const elActive = document.getElementById('statActive');
     if(elActive) {
         elActive.innerText = activeCount;
         document.getElementById('statToday').innerText = dbData.filter(u => u.date === todayStr).length;
-        document.getElementById('statStudent').innerText = dbData.filter(u => u.type === 'student' && u.date === todayStr).length;
-        document.getElementById('statSeats').innerText = `${40 - activeCount}/40`;
+        document.getElementById('statSeats').innerText = `${totalSeats - activeCount}/${totalSeats}`;
     }
 }
 
@@ -293,7 +560,7 @@ function exportCSV() {
 }
 
 // ============================================
-// 4. REPORT LOGIC (กู้คืนส่วนที่หายไป)
+// 6. REPORT LOGIC
 // ============================================
 function initChart() {
     const ctx = document.getElementById('usageChart');
@@ -326,19 +593,15 @@ function updateReport() {
     const selMonth = selectedDate.getMonth() + 1;
     const selDay = selectedDate.getDate();
 
-    // 1. Filter Data ตามช่วงเวลา
     let reportData = dbData.filter(u => {
         const d = new Date(u.date);
         if (reportType === 'daily') return d.getFullYear()===selYear && (d.getMonth()+1)===selMonth && d.getDate()===selDay;
-        // แก้ไข: รายเดือน = ทั้ง 12 เดือนของปีนั้น (ตามที่ขอ)
         if (reportType === 'monthly') return d.getFullYear()===selYear;
-        // รายปี = 5 ปีย้อนหลัง
-        return d.getFullYear() >= (new Date().getFullYear()-4) && d.getFullYear() <= new Date().getFullYear();
+        return d.getFullYear()===selYear;
     });
 
     let labels = [], counts = [];
 
-    // 2. Prepare Labels
     if (reportType === 'daily') {
         labels = ['08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00'];
         counts = labels.map(hour => reportData.filter(u => u.checkIn.startsWith(hour.substring(0,2))).length);
@@ -348,27 +611,28 @@ function updateReport() {
     } else {
         const currentYear = new Date().getFullYear();
         labels = [currentYear-4, currentYear-3, currentYear-2, currentYear-1, currentYear];
+        reportData = dbData.filter(u => {
+            const y = new Date(u.date).getFullYear();
+            return y >= (currentYear-4) && y <= currentYear;
+        });
         counts = labels.map(year => reportData.filter(u => new Date(u.date).getFullYear() === year).length);
     }
 
-    // 3. Update Bar Chart
     const palette = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
     const bgColors = labels.map((_, i) => palette[i % palette.length]);
+
     chartInstance.data.labels = labels;
     chartInstance.data.datasets[0].data = counts;
     chartInstance.data.datasets[0].backgroundColor = bgColors;
     chartInstance.update();
 
-    // 4. Update AI Chart & Stats (กู้คืนส่วนนี้กลับมา!)
     let aiStats = {}, aiCount = 0, maxDuration = 0, maxUser = '-';
     reportData.forEach(u => {
-        // AI Count
         if (u.purpose && u.purpose.startsWith('AI')) {
             aiCount++;
             let toolName = u.purpose.split(':')[1]?.trim() || 'AI General';
             aiStats[toolName] = (aiStats[toolName] || 0) + 1;
         }
-        // Duration Logic
         if (u.checkIn && u.checkOut && u.checkOut !== '-') {
             const t1 = parseTime(u.checkIn), t2 = parseTime(u.checkOut);
             const diff = t2 - t1;
@@ -387,22 +651,16 @@ function updateReport() {
     const mins = maxDuration % 60;
     const durationText = maxDuration > 0 ? `${hrs} ชม. ${mins} น.` : '-';
 
-    // Safe Update Elements
     const elTotal = document.getElementById('repTotalUsers');
     if(elTotal) elTotal.innerText = reportData.length;
-
     const elStudent = document.getElementById('repStudentCount');
     if(elStudent) elStudent.innerText = reportData.filter(u => u.type === 'student').length;
-
     const elComputer = document.getElementById('repComputerUse');
     if(elComputer) elComputer.innerText = reportData.filter(u => u.purpose && !u.purpose.startsWith('AI')).length;
-
     const elAICount = document.getElementById('repAICount');
     if(elAICount) elAICount.innerText = aiCount;
-
     const elMaxDur = document.getElementById('repMaxDuration');
     if(elMaxDur) elMaxDur.innerText = durationText;
-
     const elMaxUser = document.getElementById('repMaxUser');
     if(elMaxUser) elMaxUser.innerText = maxUser !== '-' ? `(${maxUser})` : '';
     
@@ -444,30 +702,53 @@ function exportReportCSV() {
 }
 
 // ============================================
-// 5. USER SIDE CONTROLLER (Login Page)
+// 7. USER SIDE CONTROLLER (Login Page)
 // ============================================
 async function handleCheckIn(e) {
     if(e) e.preventDefault();
     const idInput = document.getElementById('studentId');
     if(!idInput) return;
     const id = idInput.value.trim();
-    if (id.length < 3) { alert("กรุณากรอกรหัสนักศึกษา"); return; }
+    if (id.length < 3) { alert("กรุณากรอกข้อมูลให้ครบถ้วน"); return; }
+
+    const submitBtn = document.querySelector('button[type="submit"]');
+    const originalText = submitBtn.innerText;
+    submitBtn.innerText = "กำลังตรวจสอบ...";
+    submitBtn.disabled = true;
+
+    const catEl = document.querySelector('input[name="userCategory"]:checked');
+    const selectedCategory = catEl ? catEl.value : 'guest';
 
     let userData = { name: `ผู้ใช้งาน (${id})`, faculty: 'บุคคลทั่วไป', year: '-', type: 'guest' };
-    const apiInfo = await fetchStudentInfo(id);
-    
-    if (apiInfo) {
-        userData.name = apiInfo.fullNameThai || apiInfo.name_th || userData.name;
-        userData.faculty = apiInfo.facultyNameThai || apiInfo.faculty || userData.faculty;
-        userData.type = 'student';
-        const entryYear = parseInt(id.substring(0, 2));
-        if(!isNaN(entryYear)) {
-            const currentYear2Digits = parseInt((new Date().getFullYear() + 543).toString().substring(2));
-            userData.year = (currentYear2Digits - entryYear + 1).toString();
+
+    // Logic แยกประเภท (API or Guest)
+    if (selectedCategory === 'staff') {
+        const apiInfo = await fetchStudentInfo(id);
+        if (apiInfo && apiInfo.data) { 
+            const d = apiInfo.data;
+            const prefix = d.USERPREFIXNAME || '';
+            const fname = d.USERNAME || '';
+            const lname = d.USERSURNAME || '';
+            userData.name = `${prefix}${fname} ${lname}`;
+            userData.faculty = d.FACULTYNAME;
+            if (d.USERTYPE === 'นักศึกษา') {
+                userData.type = 'student';
+                userData.year = d.STUDENTYEAR;
+            } else if (d.USERTYPE && (d.USERTYPE.includes('อาจารย์') || d.USERTYPE.includes('สอน'))) {
+                userData.type = 'teacher';
+            } else {
+                userData.type = 'staff'; 
+            }
         }
     } else {
-        if (id.toLowerCase().startsWith('t')) userData.type = 'teacher';
-        else if (id.toLowerCase().startsWith('s') || id === 'admin') userData.type = 'staff';
+        const nameInput = document.getElementById('username');
+        const surInput = document.getElementById('surname');
+        if (nameInput && surInput && nameInput.value && surInput.value) {
+            userData.name = `${nameInput.value} ${surInput.value}`;
+        } else {
+            userData.name = `ผู้เยี่ยมชม (${id})`;
+        }
+        userData.stdId = id; 
     }
 
     const usageEl = document.querySelector('input[name="usageType"]:checked');
@@ -484,26 +765,10 @@ async function handleCheckIn(e) {
     };
 
     const res = await apiCheckIn(payload);
+    submitBtn.innerText = originalText;
+    submitBtn.disabled = false;
+
     if(res) showModal(userData.name, res.time);
-}
-
-function switchAdminTab(tabName) {
-    const viewMonitor = document.getElementById('viewMonitor');
-    const viewReport = document.getElementById('viewReport');
-    const btnMonitor = document.getElementById('tabBtnMonitor');
-    const btnReport = document.getElementById('tabBtnReport');
-
-    if (tabName === 'monitor') {
-        viewMonitor.classList.remove('hidden'); viewReport.classList.add('hidden');
-        btnMonitor.classList.remove('btn-outline'); btnMonitor.classList.add('btn-primary');
-        btnReport.classList.remove('btn-primary'); btnReport.classList.add('btn-outline');
-        loadAllData().then(data => { dbData = data; renderMonitorTable(); });
-    } else {
-        viewMonitor.classList.add('hidden'); viewReport.classList.remove('hidden');
-        btnMonitor.classList.remove('btn-primary'); btnMonitor.classList.add('btn-outline');
-        btnReport.classList.remove('btn-outline'); btnReport.classList.add('btn-primary');
-        loadAllData().then(data => { dbData = data; updateReport(); });
-    }
 }
 
 function showModal(name, time) { 
@@ -515,18 +780,11 @@ function closeModal() {
     document.getElementById('successModal').classList.remove('show');
     document.getElementById('checkinForm').reset();
     document.getElementById('studentId').focus();
+    const u = document.getElementById('username'); if(u) u.value='';
+    const s = document.getElementById('surname'); if(s) s.value='';
 }
 function switchMode(m) { 
-    const v1=document.getElementById('viewManual'), v2=document.getElementById('viewQR');
-    if(v1 && v2) {
-        v1.classList.add('hidden'); v2.classList.add('hidden');
-        document.getElementById('btnManual').classList.remove('active');
-        document.getElementById('btnQR').classList.remove('active');
-        if(m==='manual') { v1.classList.remove('hidden'); document.getElementById('btnManual').classList.add('active'); }
-        else { v2.classList.remove('hidden'); document.getElementById('btnQR').classList.add('active'); generateLoginQR(); }
-    }
+    const v1=document.getElementById('viewManual');
+    if(v1) v1.classList.remove('hidden');
 }
-function generateLoginQR() { 
-    const c = document.getElementById("qrcodeDisplay"); 
-    if(c) { c.innerHTML=""; new QRCode(c, {text:"lab", width:150, height:150}); document.getElementById("qrRefText").innerText = "TEST"; }
-}
+function generateLoginQR() {}

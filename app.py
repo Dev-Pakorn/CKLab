@@ -55,7 +55,7 @@ def get_student_info(std_id):
         headers = { 'Content-Type': 'application/json' }
         
         # ยิงไปที่ UBU API (ตั้ง timeout 5 วินาที เผื่อ VPN ช้า)
-        response = requests.post(url, headers=headers, data=payload, timeout=5)
+        response = requests.post(url, headers=headers, data=payload, timeout=0)
         
         if response.status_code == 200:
             return jsonify(response.json())
