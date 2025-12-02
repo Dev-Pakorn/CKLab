@@ -9,6 +9,7 @@
 </head>
 <body>
 
+    <!-- Navbar -->
     <nav class="admin-header">
         <div class="flex items-center gap-2">
             <span style="font-size: 24px;" role="img">📊</span>
@@ -25,7 +26,7 @@
 
     <div class="admin-container">
 
-        <!-- TAB MENU -->
+        <!-- 1. ส่วน Tab เลือกหน้า (Monitor vs Report) -->
         <div class="admin-tabs" style="margin-bottom: 20px; display: flex; gap: 10px;">
             <button id="tabBtnMonitor" class="btn btn-primary" onclick="switchAdminTab('monitor')">📡 Monitor (Real-time)</button>
             <button id="tabBtnReport" class="btn btn-outline" onclick="switchAdminTab('report')">📈 สถิติและรายงาน (Report)</button>
@@ -36,58 +37,59 @@
         <!-- ============================================= -->
         <div id="viewMonitor">
             
-            <!-- Header Controls -->
-            <div class="flex justify-end mb-4">
-                <div class="view-switcher">
+            <div class="flex justify-between items-start mb-4 flex-wrap gap-4">
+                <!-- Stats Cards -->
+                <div class="dashboard-grid" style="margin-bottom: 0; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); flex: 1;">
+                    <div class="stat-card" style="padding: 1rem; border-left: 4px solid var(--success);">
+                        <span class="stat-label">🟢 กำลังใช้งาน (Active)</span>
+                        <span class="stat-value" id="statActive">0</span>
+                    </div>
+                    <div class="stat-card" style="padding: 1rem; border-left: 4px solid var(--primary);">
+                        <span class="stat-label">📅 จำนวนคนเข้าใช้งานวันนี้ (Today)</span>
+                        <span class="stat-value" id="statToday">0</span>
+                    </div>
+                    <!-- Hidden Student Stat for Script Compatibility -->
+                    <span id="statStudent" style="display: none;"></span>
+                    
+                    <div class="stat-card" style="padding: 1rem; border-left: 4px solid var(--warning);">
+                        <span class="stat-label">💻 ที่นั่งว่าง (Available)</span>
+                        <span class="stat-value" id="statSeats">30/30</span>
+                    </div>
+                </div>
+
+                <!-- View Switcher -->
+                <div class="view-switcher" style="height: fit-content;">
                     <button id="btnViewTable" class="view-btn active" onclick="switchMonitorView('table')">📄 ตาราง (Table)</button>
                     <button id="btnViewMap" class="view-btn" onclick="switchMonitorView('map')">🗺️ แผนผัง (Map)</button>
-                </div>
-            </div>
-            
-            <!-- 🌟 Status Cards (แก้ไขหัวข้อตามที่ขอ) -->
-            <div class="dashboard-grid">
-                <div class="stat-card" style="border-left: 4px solid var(--success);">
-                    <span class="stat-label">🟢 กำลังใช้งาน (Active)</span>
-                    <span class="stat-value" id="statActive">0</span>
-                </div>
-                <div class="stat-card" style="border-left: 4px solid var(--primary);">
-                    <span class="stat-label">📅 จำนวนคนเข้าใช้งานวันนี้ (Today)</span>
-                    <span class="stat-value" id="statToday">0</span>
-                </div>
-                <!-- Hidden Student Stat -->
-                <span id="statStudent" style="display: none;"></span>
-                
-                <div class="stat-card" style="border-left: 4px solid var(--warning);">
-                    <span class="stat-label">💻 ที่นั่งว่าง (Available)</span>
-                    <span class="stat-value" id="statSeats">60/60</span>
                 </div>
             </div>
 
             <!-- 1.1 TABLE VIEW WRAPPER -->
             <div id="monitorTableViewWrapper">
+                <!-- Filter Controls -->
                 <div class="filter-wrapper">
-                   <div class="flex flex-wrap justify-between items-center gap-2">
-                       <div class="flex items-center gap-2">
-                            <span class="font-bold text-main">Filter:</span>
+                    <div class="flex flex-wrap justify-between items-center gap-2">
+                        <div class="flex items-center gap-2">
+                            <span class="font-bold text-main">ช่วงเวลา:</span>
                             <select id="timeFilter" class="filter-select" onchange="renderMonitorData()">
-                                <option value="today">วันนี้</option>
-                                <option value="month">เดือนนี้</option>
+                                <option value="today">📅 วันนี้ (Today)</option>
+                                <option value="month">🗓️ เดือนนี้ (Month)</option>
+                                <option value="all">🗂️ ทั้งหมด (All)</option>
                             </select>
-                       </div>
-                       <div class="search-box">
-                           <span class="search-icon">🔍</span>
-                           <input type="text" id="searchInput" onkeyup="renderMonitorData()" placeholder="ค้นหาชื่อ, รหัสนักศึกษา...">
-                       </div>
-                       <button onclick="exportCSV()" class="btn btn-primary btn-sm">📥 CSV</button>
-                   </div>
-                   
-                   <!-- Advanced Filter Row -->
+                        </div>
+                        <div class="search-box">
+                            <span class="search-icon">🔍</span>
+                            <input type="text" id="searchInput" onkeyup="renderMonitorData()" placeholder="ค้นหาชื่อ, รหัสนักศึกษา...">
+                        </div>
+                        <button onclick="exportCSV()" class="btn btn-primary btn-sm">📥 Export CSV</button>
+                    </div>
+
                     <div class="filter-row">
                         <div class="filter-group"><span class="filter-label">ประเภทผู้ใช้</span><select id="typeFilter" class="filter-select" onchange="renderMonitorData()"><option value="all">ทั้งหมด (All)</option><option value="student">🎓 นักศึกษา</option><option value="teacher">👨‍🏫 อาจารย์</option><option value="staff">🏢 บุคลากร</option><option value="guest">👤 บุคคลทั่วไป</option></select></div>
                         <div class="filter-group"><span class="filter-label">คณะ/หน่วยงาน</span><select id="facultyFilter" class="filter-select" onchange="renderMonitorData()"><option value="all">🏢 ทุกคณะ</option></select></div>
                         <div class="filter-group"><span class="filter-label">ชั้นปี</span><select id="yearFilter" class="filter-select" onchange="renderMonitorData()"><option value="all">🎓 ทุกชั้นปี</option></select></div>
                         <div class="filter-group"><span class="filter-label">โซน</span><select id="zoneFilter" class="filter-select" onchange="renderMonitorData()"><option value="all">🪑 ทุกโซน</option></select></div>
-                        <div class="filter-group"><span class="filter-label">สถานะ</span><select id="statusFilter" class="filter-select" onchange="renderMonitorData()"><option value="active">🟢 Active Only</option><option value="completed">⚪ Completed</option><option value="all">แสดงทั้งหมด</option></select></div>
+                        <div class="filter-group"><span class="filter-label">สถานะ</span><select id="statusFilter" class="filter-select" onchange="renderMonitorData()"><option value="active">🟢 Active Only</option><option value="reserved">⚠️ Reserved</option> <option value="completed">⚪ Completed</option><option value="all">แสดงทั้งหมด</option></select></div>
                         <button onclick="resetFilters()" class="btn btn-outline btn-sm" style="height: 38px; align-self: flex-end;">❌ Reset</button>
                     </div>
                 </div>
@@ -96,14 +98,14 @@
                     <table>
                         <thead>
                             <tr>
-                                <th class="sortable" onclick="handleSort('checkIn')">เวลาเข้า</th>
+                                <th class="sortable" onclick="handleSort('checkIn')">เวลาเข้า <span class="sort-icon">↕</span></th>
                                 <th>เวลาออก</th>
-                                <th class="sortable" onclick="handleSort('name')">ชื่อ</th>
-                                <th>ประเภท</th>
-                                <th>รหัส</th>
-                                <th>คณะ</th>
-                                <th>ชั้นปี</th>
-                                <th>โต๊ะ</th>
+                                <th class="sortable" onclick="handleSort('name')">ชื่อ - สกุล <span class="sort-icon">↕</span></th>
+                                <th class="sortable" onclick="handleSort('type')">ประเภทผู้ใช้ <span class="sort-icon">↕</span></th>
+                                <th class="sortable" onclick="handleSort('stdId')">รหัส/ID <span class="sort-icon">↕</span></th>
+                                <th class="sortable" onclick="handleSort('faculty')">คณะ/หน่วยงาน <span class="sort-icon">↕</span></th>
+                                <th class="sortable" onclick="handleSort('year')">ชั้นปี <span class="sort-icon">↕</span></th>
+                                <th class="sortable" onclick="handleSort('desk')">โต๊ะ <span class="sort-icon">↕</span></th>
                                 <th>วัตถุประสงค์</th>
                                 <th>สถานะ</th>
                             </tr>
@@ -113,106 +115,90 @@
                 </div>
             </div>
 
-            <!-- 1.2 MAP VIEW -->
+            <!-- 1.2 MAP VIEW SECTION -->
             <div id="monitorMapView" class="hidden">
                 
-                <!-- Config Dropdown -->
-                <details class="mb-4 p-3 border rounded-lg bg-white shadow-sm">
-                    <summary class="font-bold text-primary cursor-pointer list-none flex items-center gap-2">
-                        <span>⚙️ จัดการโครงสร้าง & Master List (คลิกเพื่อเปิด/ปิด)</span>
-                    </summary>
-                    
-                    <div class="mt-4" style="display: flex; gap: 20px; flex-wrap: wrap;">
-                        <!-- Zone Config -->
-                        <div style="flex: 1; min-width: 300px; background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid var(--border);">
-                            <h4 class="font-bold text-main mb-2 text-sm">🗺️ โซนและจำนวนโต๊ะ</h4>
-                            <div id="zoneConfigContainer" class="mb-3"></div>
-                            <div class="flex gap-2">
-                                <input type="text" id="newZoneName" class="input-field" placeholder="โซน (เช่น D)" style="margin:0; flex:1; padding:8px;">
-                                <input type="number" id="newZoneCount" class="input-field" placeholder="จำนวน" style="margin:0; width:80px; padding:8px;">
-                                <button onclick="addZone()" class="btn btn-primary btn-sm">เพิ่ม</button>
-                            </div>
-                        </div>
+                <!-- ส่วน Config (จัดการโครงสร้าง & Master List) ถูกลบออกแล้วตามคำขอ -->
 
-                        <!-- Software Config -->
-                        <div style="flex: 1; min-width: 300px; background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid var(--border);">
-                            <h4 class="font-bold text-main mb-2 text-sm">🤖 Master List: ซอฟต์แวร์ & AI</h4>
-                            <div id="softwareListContainer" style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px;"></div>
-                            <div class="flex gap-2">
-                                <input type="text" id="newSoftwareName" class="input-field" placeholder="ชื่อ AI (เช่น Claude)" style="margin:0; padding:8px;">
-                                <button onclick="addSoftware()" class="btn btn-primary btn-sm">เพิ่ม</button>
-                            </div>
-                        </div>
-                    </div>
-                </details>
-
-                <!-- Map Controls -->
-                <div class="map-controls" style="margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
-                    <div class="text-sm text-light">* คลิกที่โต๊ะเพื่อจัดการสถานะ หรือ Check-out</div>
+                <div class="map-controls" style="margin-bottom: 10px; display: flex; justify-content: flex-end;">
                     <div class="map-legend">
                         <div class="legend-item"><div class="legend-box" style="background:#fff; border:2px solid #e2e8f0;"></div> ว่าง</div>
-                        <div class="legend-item"><div class="legend-box" style="background:#f0fdf4; border:2px solid #16a34a;"></div> ใช้งาน</div>
-                        <div class="legend-item"><div class="legend-box" style="background:#fef2f2; border:2px solid #ef4444;"></div> ปิดซ่อม</div>
+                        <div class="legend-item"><div class="legend-box" style="background:#fffbeb; border:2px dashed #f59e0b;"></div> จอง</div>
+                        <div class="legend-item"><div class="legend-box" style="background:#f0fdf4; border:2px solid #16a34a;"></div> ใช้งานอยู่</div>
+                        <div class="legend-item"><div class="legend-box" style="background:#fef2f2; border:2px solid #ef4444;"></div> ปิดปรับปรุง</div>
                     </div>
                 </div>
                 
+                <!-- Map Container -->
                 <div id="deskMapContainer"></div>
             </div>
 
             <div id="noDataMessage" class="hidden text-center mt-4 text-light">ไม่พบข้อมูลตามเงื่อนไขที่เลือก</div>
         </div>
 
-        <!-- VIEW 2: REPORT -->
+
+        <!-- ============================================= -->
+        <!-- VIEW 2: REPORT & ANALYTICS -->
+        <!-- ============================================= -->
         <div id="viewReport" class="hidden">
-             <div class="filter-bar">
-                 <div class="flex items-center gap-2 flex-wrap">
-                     <span class="font-bold text-main">📊 รายงาน:</span>
-                     <select id="reportType" class="filter-select" onchange="updateReport()">
-                         <option value="daily">รายวัน (Daily)</option>
-                         <option value="monthly" selected>รายเดือน (Monthly)</option>
-                         <option value="yearly">รายปี (Yearly)</option>
-                     </select>
-                     <input type="date" id="reportDate" class="filter-select" onchange="updateReport()">
-                     <button onclick="exportReportCSV()" class="btn btn-primary" style="padding: 8px 16px;">📥 Export CSV</button>
-                 </div>
-             </div>
+            
+            <div class="filter-bar">
+                <div class="flex items-center gap-2 flex-wrap">
+                    <span class="font-bold text-main">📊 เลือกรายงาน:</span>
+                    <select id="reportType" class="filter-select" onchange="updateReport()">
+                        <option value="daily">รายวัน (Daily)</option>
+                        <option value="monthly" selected>รายเดือน (Monthly)</option>
+                        <option value="yearly">รายปี (Yearly)</option>
+                    </select>
+                    
+                    <input type="date" id="reportDate" class="filter-select" onchange="updateReport()">
+                    
+                    <button onclick="exportReportCSV()" class="btn btn-primary" style="padding: 8px 16px;">
+                        📥 Export Report CSV
+                    </button>
+                </div>
+            </div>
 
-             <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 2rem;">
-                 <div class="chart-wrapper" style="flex: 2; min-width: 300px;">
-                     <h4 class="text-center mb-2 font-bold text-main">📈 ปริมาณการใช้งาน (Usage Volume)</h4>
-                     <canvas id="usageChart"></canvas>
-                 </div>
-                 <div class="chart-wrapper" style="flex: 1; min-width: 300px;">
-                     <h4 class="text-center mb-2 font-bold text-main">🏆 AI ยอดนิยม (Top AI Tools)</h4>
-                     <canvas id="aiChart"></canvas>
-                 </div>
-             </div>
+            <!-- Chart Section -->
+            <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 2rem;">
+                <div class="chart-wrapper" style="flex: 2; min-width: 300px;">
+                    <h4 class="text-center mb-2 font-bold text-main">📈 ปริมาณการใช้งาน (Usage Volume)</h4>
+                    <canvas id="usageChart"></canvas>
+                </div>
+                <div class="chart-wrapper" style="flex: 1; min-width: 300px;">
+                    <h4 class="text-center mb-2 font-bold text-main">🏆 AI ยอดนิยม (Top AI Tools)</h4>
+                    <canvas id="aiChart"></canvas>
+                </div>
+            </div>
 
-             <!-- Summary Stats -->
-             <div class="dashboard-grid">
-                 <div class="stat-card">
-                     <span class="stat-label">👥 ทั้งหมด</span>
-                     <span class="stat-value" id="repTotalUsers">0</span>
-                 </div>
-                 <div class="stat-card">
-                     <span class="stat-label">🎓 นักศึกษา</span>
-                     <span class="stat-value" id="repStudentCount">0</span>
-                 </div>
-                 <div class="stat-card" style="border-left: 4px solid #f97316;">
-                     <span class="stat-label">⏱️ นั่งนานสุด</span>
-                     <span class="stat-value" style="font-size: 1.5rem;" id="repMaxDuration">-</span>
-                     <span style="font-size: 0.8rem; color: #666;" id="repMaxUser"></span>
-                 </div>
-                 <div class="stat-card" style="border-left: 4px solid #8b5cf6;">
-                     <span class="stat-label">🤖 ใช้ AI</span>
-                     <span class="stat-value" id="repAICount">0</span>
-                 </div>
-             </div>
+            <!-- Summary Stats -->
+            <h3 class="mb-4 text-main">สรุปภาพรวม (Overview)</h3>
+            <div class="dashboard-grid">
+                <div class="stat-card">
+                    <span class="stat-label">👥 ผู้ใช้ทั้งหมด</span>
+                    <span class="stat-value" id="repTotalUsers">0</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">🎓 นักศึกษา</span>
+                    <span class="stat-value" id="repStudentCount">0</span>
+                </div>
+                <div class="stat-card" style="border-left: 4px solid #f97316;">
+                    <span class="stat-label">⏱️ นั่งนานสุด (Max Duration)</span>
+                    <span class="stat-value" style="font-size: 1.5rem;" id="repMaxDuration">-</span>
+                    <span style="font-size: 0.8rem; color: #666;" id="repMaxUser"></span>
+                </div>
+                <div class="stat-card" style="border-left: 4px solid #8b5cf6;">
+                    <span class="stat-label">🤖 ใช้ AI (ครั้ง)</span>
+                    <span class="stat-value" id="repAICount">0</span>
+                </div>
+            </div>
         </div>
 
     </div>
 
+    <!-- ============================================= -->
     <!-- MODAL: DESK MANAGEMENT -->
+    <!-- ============================================= -->
     <div id="deskModal" class="modal-overlay">
         <div class="modal-content" style="text-align: left; max-width: 500px;">
             <div class="flex justify-between items-center mb-4">
@@ -221,24 +207,17 @@
             </div>
             
             <div class="mb-4">
-                <label class="filter-label">สถานะโต๊ะ</label>
+                <label class="filter-label">สถานะโต๊ะ (Desk Status)</label>
                 <select id="deskStatusSelect" class="input-field" style="padding: 8px; width: 100%; background: white;">
                     <option value="available">✅ ว่าง (Available)</option>
+                    <option value="reserved">⚠️ จอง (Reserved)</option>
                     <option value="maintenance">🔧 ปิดปรับปรุง (Maintenance)</option>
                     <option value="occupied" disabled>👤 ใช้งานอยู่ (Occupied)</option>
                 </select>
             </div>
 
-            <!-- ส่วนแสดงผู้ใช้ -->
             <div id="userInfoSection" class="mb-4 hidden" style="background: #f0fdf4; padding: 12px; border-radius: 8px; border: 1px solid #bbf7d0;">
-                 <p class="text-sm text-light">ผู้ใช้งานปัจจุบัน:</p>
-                 <p class="font-bold" style="color: #166534; font-size: 1.1rem;" id="modalUserDisplay">-</p>
-                 <div class="flex justify-between items-end mt-2">
-                    <p class="text-sm text-light">เข้าเมื่อ: <span id="modalTimeDisplay">-</span></p>
-                    <button id="btnForceCheckout" class="btn btn-sm btn-outline" style="color: var(--danger); border-color: var(--danger);">
-                        Check-out เดี๋ยวนี้
-                    </button>
-                 </div>
+                 <!-- Content filled by JS -->
             </div>
 
             <div class="mb-4">

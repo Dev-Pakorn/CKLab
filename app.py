@@ -49,13 +49,13 @@ def get_student_info(std_id):
     url = "https://esapi.ubu.ac.th/api/v1/student/reg-data"
     
     try:
-        # Logic การเข้ารหัสตามที่คุณให้มา
+        # Logic การเข้ารหัส
         encoded_id = base64.b64encode(std_id.encode()).decode()
         payload = json.dumps({ "loginName": encoded_id })
         headers = { 'Content-Type': 'application/json' }
         
-        # ยิงไปที่ UBU API (ตั้ง timeout 5 วินาที เผื่อ VPN ช้า)
-        response = requests.post(url, headers=headers, data=payload, timeout=0)
+        # แก้ไข timeout จาก 0 เป็น 5 วินาที
+        response = requests.post(url, headers=headers, data=payload, timeout=5)
         
         if response.status_code == 200:
             return jsonify(response.json())
@@ -66,6 +66,9 @@ def get_student_info(std_id):
     except requests.exceptions.ConnectionError:
         print("Error: Connect to UBU API failed. (Check VPN?)")
         return jsonify({'error': 'Connection Failed (Check VPN)'}), 500
+    except requests.exceptions.Timeout:
+        print("Error: UBU API Timeout.")
+        return jsonify({'error': 'Request Timeout'}), 504
     except Exception as e:
         print(f"Server Error: {e}")
         return jsonify({'error': str(e)}), 500
@@ -93,19 +96,22 @@ def get_logs():
 
 @app.route('/api/checkin', methods=['POST'])
 def checkin():
-    data = request.json
-    new_log = AccessLog(
-        name=data['name'],
-        std_id=data['stdId'],
-        faculty=data['faculty'],
-        year=data['year'],
-        user_type=data['type'],
-        desk=data['desk'],
-        purpose=data['purpose']
-    )
-    db.session.add(new_log)
-    db.session.commit()
-    return jsonify({'message': 'Check-in Success', 'time': new_log.check_in.strftime('%H:%M')})
+    try:
+        data = request.json
+        new_log = AccessLog(
+            name=data.get('name', '-'),
+            std_id=data.get('stdId', '-'),
+            faculty=data.get('faculty', '-'),
+            year=data.get('year', '-'),
+            user_type=data.get('type', 'Student'),
+            desk=data.get('desk', '-'),
+            purpose=data.get('purpose', '-')
+        )
+        db.session.add(new_log)
+        db.session.commit()
+        return jsonify({'message': 'Check-in Success', 'time': new_log.check_in.strftime('%H:%M')})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/checkout/<int:id>', methods=['POST'])
 def checkout(id):
@@ -115,7 +121,7 @@ def checkout(id):
         log.check_out = datetime.now()
         db.session.commit()
         return jsonify({'message': 'Check-out Success'})
-    return jsonify({'message': 'Error'}), 404
+    return jsonify({'message': 'Error: ID not found'}), 404
 
 # ป้องกัน Cache
 @app.after_request
@@ -124,4 +130,4 @@ def add_header(response):
     return response
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, host='0.0.0.0', port=5000)

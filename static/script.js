@@ -1,15 +1,30 @@
-// --- script.js (Final Version: Monitor + Report + User + Admin Check-in Purpose) ---
+// --- script.js (Final Version: Fixed Year Calculation & Mock Data) ---
 
 const STORAGE_KEY = 'lab_access_db_v2';
 const DESK_CONFIG_KEY = 'lab_desk_config';
 const APP_CONFIG_KEY = 'lab_app_config';
 
+// 🌟 1. แก้ไข Mock Data (เพิ่มรหัส 68114540227 ตามที่ขอ)
+const STUDENT_DB = {
+    "68114540083": { name: "เขมมิกา พันธ์แก่น", faculty: "วิทยาศาสตร์", year: "1" },
+    "68114540353": { name: "ปภังกร นิชรัตน์", faculty: "วิทยาศาสตร์", year: "1" },
+    "68114540227": { name: "ทดสอบ ระบบ", faculty: "วิทยาศาสตร์", year: "1" }, // ✅ เพิ่มให้แล้ว (ถ้า API จริงดึงได้ จะใช้ชื่อจริงทับอันนี้)
+    
+    // ตัวอย่างปี 3 (รหัสขึ้นต้น 66)
+    "66114540001": { name: "สมชาย ใจดี", faculty: "วิศวกรรมศาสตร์", year: "3" },
+    // ตัวอย่างปี 4 (รหัสขึ้นต้น 65)
+    "65114540002": { name: "สมหญิง รักเรียน", faculty: "บริหารศาสตร์", year: "4" },
+    // ตัวอย่างปี 5 (รหัสขึ้นต้น 64 - สำหรับคณะที่เรียน 5-6 ปี)
+    "64114540003": { name: "มานะ อดทน", faculty: "เภสัชศาสตร์", year: "5" },
+    
+    "admin": { name: "Admin Staff", faculty: "สำนักคอมฯ", year: "-" }
+};
+
 // Global Variables
 let dbData = [];
 let deskConfig = {}; 
-// 🌟 Config เริ่มต้น
 let appConfig = {
-    zones: [{ id: 'A', count: 20 }, { id: 'B', count: 20 }, { id: 'C', count: 20 }],
+    zones: [{ id: 'A', count: 10 }, { id: 'B', count: 10 }, { id: 'C', count: 10 }],
     softwareList: [
         "ChatGPT+", "Claude Pro", "Perplexity Pro", "Midjourney Basic", 
         "SciSpace Premium", "Grammarly Pro", "Botnoi VOICE", "Gramma Pro", "Canva Pro"
@@ -21,13 +36,13 @@ let currentSortCol = 'checkIn';
 let currentSortDir = 'desc';
 let currentMonitorView = 'table'; 
 let currentEditingDesk = null;
+let tempApiUser = null;
 
 // ============================================
 // 1. API CONNECTION & CONFIG LOAD
 // ============================================
 async function loadAllData() {
     try {
-        // 1. โหลด Config (App & Desk) จาก LocalStorage
         const storedApp = localStorage.getItem(APP_CONFIG_KEY);
         if (storedApp) {
             const parsed = JSON.parse(storedApp);
@@ -38,7 +53,6 @@ async function loadAllData() {
         const storedDesk = localStorage.getItem(DESK_CONFIG_KEY);
         if (storedDesk) deskConfig = JSON.parse(storedDesk);
 
-        // 2. โหลด Logs จาก Server
         const response = await fetch(`/api/logs?t=${new Date().getTime()}`);
         if (!response.ok) throw new Error('Network response was not ok');
         return await response.json();
@@ -51,8 +65,14 @@ async function loadAllData() {
 async function fetchStudentInfo(stdId) {
     try {
         const response = await fetch(`/api/student-info/${stdId}`);
-        if (response.ok) return await response.json();
-    } catch (error) {}
+        if (response.ok) {
+            return await response.json();
+        } else {
+            console.warn("API Error Status:", response.status);
+        }
+    } catch (error) {
+        console.error("Fetch Error (Check VPN):", error);
+    }
     return null;
 }
 
@@ -81,7 +101,7 @@ if (document.getElementById('viewMonitor')) {
         dbData = await loadAllData();
         
         populateDropdowns();
-        // renderConfigUI(); // ไม่แสดง Config UI ตามที่ขอ
+        renderConfigUI(); 
         renderMonitorData();
         
         if(document.getElementById('statActive')) updateStats();
@@ -163,6 +183,7 @@ function switchMonitorView(view) {
     } else {
         if(tableWrapper) tableWrapper.classList.add('hidden');
         if(mapView) mapView.classList.remove('hidden');
+        renderConfigUI(); 
     }
     renderMonitorData();
 }
@@ -177,7 +198,63 @@ function renderMonitorData() {
 }
 
 // ============================================
-// 4. MAP RENDER & DESK MANAGEMENT
+// 4. SETTINGS & CONFIG UI LOGIC (Admin Config)
+// ============================================
+function renderConfigUI() {
+    const zoneCont = document.getElementById('zoneConfigContainer');
+    if(zoneCont) {
+        zoneCont.innerHTML = '';
+        appConfig.zones.forEach((zone, index) => {
+            const div = document.createElement('div');
+            div.style.cssText = "display:flex; justify-content:space-between; margin-bottom:4px; font-size:0.9rem; padding:4px; border-bottom:1px solid #eee;";
+            div.innerHTML = `<span><b>โซน ${zone.id}</b>: ${zone.count} โต๊ะ</span> <span style="color:red; cursor:pointer; font-weight:bold;" onclick="removeZone(${index})">×</span>`;
+            zoneCont.appendChild(div);
+        });
+    }
+    const swCont = document.getElementById('softwareListContainer');
+    if(swCont) {
+        swCont.innerHTML = '';
+        appConfig.softwareList.forEach((sw, index) => {
+            const tag = document.createElement('span');
+            tag.className = 'desk-software-tag'; 
+            tag.style.cssText = "font-size:0.85rem; padding:4px 8px; border:1px solid #ddd; margin-right:4px; margin-bottom:4px; display:inline-block; background:#fff;";
+            tag.innerHTML = `${sw} <span style="margin-left:5px; cursor:pointer; color:#666; font-weight:bold;" onclick="removeSoftware(${index})">×</span>`;
+            swCont.appendChild(tag);
+        });
+    }
+}
+
+function addZone() {
+    const name = document.getElementById('newZoneName').value.trim().toUpperCase();
+    const count = parseInt(document.getElementById('newZoneCount').value);
+    if(name && count > 0) {
+        appConfig.zones.push({ id: name, count: count });
+        saveAppConfig();
+        document.getElementById('newZoneName').value = '';
+        document.getElementById('newZoneCount').value = '';
+    } else { alert('กรุณากรอกข้อมูลให้ครบ'); }
+}
+function removeZone(index) { if(confirm('ยืนยันลบโซน?')) { appConfig.zones.splice(index, 1); saveAppConfig(); } }
+
+function addSoftware() {
+    const name = document.getElementById('newSoftwareName').value.trim();
+    if(name && !appConfig.softwareList.includes(name)) {
+        appConfig.softwareList.push(name);
+        saveAppConfig();
+        document.getElementById('newSoftwareName').value = '';
+    }
+}
+function removeSoftware(index) { if(confirm('ลบรายการนี้?')) { appConfig.softwareList.splice(index, 1); saveAppConfig(); } }
+
+function saveAppConfig() {
+    localStorage.setItem(APP_CONFIG_KEY, JSON.stringify(appConfig));
+    renderConfigUI();
+    renderDeskMap(); 
+    updateStats();   
+}
+
+// ============================================
+// 5. MAP RENDER & DESK MANAGEMENT
 // ============================================
 function renderDeskMap() {
     const container = document.getElementById('deskMapContainer');
@@ -185,9 +262,10 @@ function renderDeskMap() {
     container.innerHTML = '';
 
     const activeUsers = dbData.filter(u => u.status === 'active');
+    // 🌟 แก้ไข Fallback เป็น 10 ที่นั่งต่อโซน
     const zones = (appConfig.zones && appConfig.zones.length > 0) 
                   ? appConfig.zones 
-                  : [{ id: 'A', count: 20 }, { id: 'B', count: 20 }, { id: 'C', count: 20 }];
+                  : [{ id: 'A', count: 10 }, { id: 'B', count: 10 }, { id: 'C', count: 10 }];
 
     zones.forEach(zone => {
         const zoneDiv = document.createElement('div');
@@ -198,10 +276,10 @@ function renderDeskMap() {
 
         for (let i = 1; i <= zone.count; i++) {
             const deskId = `${zone.id}-${i.toString().padStart(2, '0')}`;
-            
             const user = activeUsers.find(u => u.desk === deskId || u.desk === `${zone.id}-${i}`);
             const config = deskConfig[deskId] || {};
             const isMaintenance = config.status === 'maintenance';
+            const isReserved = config.status === 'reserved';
 
             const deskItem = document.createElement('div');
             let statusClass = '', statusText = 'ว่าง', textColor = '#64748b';
@@ -210,10 +288,12 @@ function renderDeskMap() {
                 statusClass = 'active'; statusText = 'ใช้งาน'; textColor = '#166534';
             } else if (isMaintenance) { 
                 statusClass = 'maintenance'; statusText = 'ปิดซ่อม'; textColor = '#991b1b';
+            } else if (isReserved) {
+                statusClass = ''; statusText = 'จองแล้ว'; deskItem.style.border = '2px dashed #f59e0b'; 
+                deskItem.style.background = '#fffbeb'; textColor = '#b45309';
             }
 
             deskItem.className = `desk-item ${statusClass}`;
-            // โต๊ะว่างหรือซ่อมคลิกได้เพื่อจัดการ / โต๊ะมีคนคลิกเพื่อดูข้อมูลหรือ check-out
             deskItem.onclick = () => openDeskModal(deskId, user, config);
 
             let innerHTML = `<div class="desk-id" style="color:${textColor}">${deskId}</div><div class="desk-status">${statusText}</div>`;
@@ -224,8 +304,7 @@ function renderDeskMap() {
                     let toolName = user.purpose.split(':')[1]?.trim() || 'AI';
                     innerHTML += `<div class="desk-software-tag" style="background:#f3e8ff; color:#7e22ce; border:1px solid #d8b4fe;">🤖 ${toolName}</div>`;
                 }
-            } 
-            // ลบส่วนแสดง Software Tag ออก เพราะเราเปลี่ยนเป็น Purpose Selector แล้ว
+            }
 
             deskItem.innerHTML = innerHTML;
             grid.appendChild(deskItem);
@@ -235,35 +314,82 @@ function renderDeskMap() {
     });
 }
 
-// 🌟 ฟังก์ชันจัดการการแสดงผล Dropdown AI ใน Admin Modal
-function toggleAdminAiSelect(isAi) {
-    const select = document.getElementById('adminAiTool');
-    if (select) {
-        if (isAi) select.classList.remove('hidden');
-        else select.classList.add('hidden');
+// --- Modal & Admin Check-in Logic ---
+
+window.toggleAdminAi = function(show) {
+    const el = document.getElementById('adminAiSelectWrapper');
+    if(el) { if(show) el.classList.remove('hidden'); else el.classList.add('hidden'); }
+}
+
+window.toggleAdminInputType = function() {
+    const type = document.getElementById('adminAddType').value;
+    const guestSection = document.getElementById('adminGuestSection');
+    const apiSection = document.getElementById('adminApiSection');
+    tempApiUser = null;
+    document.getElementById('adminApiResult').classList.add('hidden');
+    document.getElementById('adminAddId').value = '';
+    if (type === 'guest') {
+        guestSection.classList.remove('hidden');
+        apiSection.classList.add('hidden');
+    } else {
+        guestSection.classList.add('hidden');
+        apiSection.classList.remove('hidden');
+        const ph = type === 'staff' ? "รหัสบุคลากร / Account" : "รหัสนักศึกษา";
+        document.getElementById('adminAddId').placeholder = ph;
     }
 }
 
-// 🌟 OPEN MODAL (Updated for Purpose Selection)
+window.adminSearchUser = async function() {
+    const idInput = document.getElementById('adminAddId');
+    const stdId = idInput.value.trim();
+    const resultDiv = document.getElementById('adminApiResult');
+    if (stdId.length < 3) { alert("กรุณากรอกรหัส"); return; }
+
+    idInput.disabled = true;
+    resultDiv.innerHTML = `<p class="text-sm text-light">🔄 กำลังค้นหา...</p>`;
+    resultDiv.classList.remove('hidden');
+
+    const apiInfo = await fetchStudentInfo(stdId);
+    idInput.disabled = false;
+
+    if (apiInfo && apiInfo.data) {
+        const d = apiInfo.data;
+        const prefix = d.USERPREFIXNAME || '';
+        const fname = d.USERNAME || '';
+        const lname = d.USERSURNAME || '';
+        
+        tempApiUser = {
+            name: `${prefix}${fname} ${lname} (${stdId})`,
+            faculty: d.FACULTYNAME || 'ไม่ระบุ',
+            year: d.STUDENTYEAR || '-',
+            type: document.getElementById('adminAddType').value,
+            stdId: stdId
+        };
+        resultDiv.innerHTML = `<div style="background:#e0f2fe; padding:8px; border-radius:6px; margin-top:5px;"><p class="text-sm text-success">✅ พบข้อมูล: ${tempApiUser.name}</p></div>`;
+    } else {
+        tempApiUser = null;
+        resultDiv.innerHTML = `<p class="text-sm" style="color:var(--danger)">❌ ไม่พบข้อมูล (จะใช้ Mockup แทนถ้ามี)</p>`;
+        
+        // Mock Fallback for Admin Search
+        if(STUDENT_DB[stdId]) {
+            const m = STUDENT_DB[stdId];
+            tempApiUser = { name: `${m.name} (${stdId})`, faculty: m.faculty, year: m.year, type: document.getElementById('adminAddType').value, stdId: stdId };
+            resultDiv.innerHTML = `<div style="background:#fffbeb; padding:8px; border-radius:6px; margin-top:5px;"><p class="text-sm text-warning">⚠️ พบใน Mock Data: ${tempApiUser.name}</p></div>`;
+        }
+    }
+}
+
 function openDeskModal(deskId, user, config) {
     currentEditingDesk = deskId;
+    tempApiUser = null; 
     const modal = document.getElementById('deskModal');
     document.getElementById('modalDeskId').innerText = deskId;
-    
     const statusSelect = document.getElementById('deskStatusSelect');
     const userInfoSec = document.getElementById('userInfoSection');
-    const btnCheckout = document.getElementById('btnForceCheckout');
-
-    // ส่วน Container ที่เคยเป็น Checkbox เดิม
-    const container = document.getElementById('modalSoftwareCheckboxes');
-    // เปลี่ยน Label (ถ้าทำได้ผ่าน JS หรือแก้ใน HTML ถาวร)
-    const containerWrapper = container ? container.closest('.mb-4') : null;
 
     if (user) {
-        // --- กรณีมีผู้ใช้งาน (Occupied) ---
         statusSelect.value = 'occupied';
         statusSelect.disabled = true; 
-        
         userInfoSec.classList.remove('hidden');
         userInfoSec.innerHTML = `
             <p class="text-sm text-light">ผู้ใช้งานปัจจุบัน:</p>
@@ -275,96 +401,98 @@ function openDeskModal(deskId, user, config) {
                 ออกจากระบบ (Check-out)
             </button>
         `;
-        
-        // ซ่อนส่วนเลือกวัตถุประสงค์ เพราะมีคนนั่งแล้ว
-        if (containerWrapper) containerWrapper.classList.add('hidden');
-
     } else {
-        // --- กรณีโต๊ะว่าง (Available/Maintenance) ---
         statusSelect.disabled = false;
-        statusSelect.value = config.status === 'maintenance' ? 'maintenance' : 'available';
+        statusSelect.value = config.status === 'maintenance' ? 'maintenance' : (config.status === 'reserved' ? 'reserved' : 'available');
         
+        let reservedOption = statusSelect.querySelector('option[value="reserved"]');
+        if (!reservedOption) {
+            reservedOption = document.createElement('option');
+            reservedOption.value = 'reserved';
+            reservedOption.innerText = '⚠️ จอง (Reserved)';
+            statusSelect.appendChild(reservedOption);
+        }
+
         userInfoSec.classList.remove('hidden');
-        // Form Admin Check-in
         userInfoSec.innerHTML = `
             <div style="border-top:1px dashed #ddd; padding-top:10px; margin-top:5px;">
                 <p class="font-bold text-sm mb-2" style="color:var(--primary);">Admin Check-in (เพิ่มผู้ใช้)</p>
-                <input type="text" id="adminAddName" class="input-field" placeholder="ชื่อ-สกุล" style="width:100%; padding:8px; margin-bottom:5px; font-size:0.9rem;">
-                <input type="text" id="adminAddId" class="input-field" placeholder="รหัส/เบอร์โทร" style="width:100%; padding:8px; margin-bottom:5px; font-size:0.9rem;">
-                <select id="adminAddType" class="input-field" style="width:100%; padding:8px; font-size:0.9rem;">
-                    <option value="student">นักศึกษา</option>
-                    <option value="guest">บุคคลทั่วไป</option>
-                    <option value="staff">บุคลากร</option>
-                </select>
+                <div style="margin-bottom:8px;">
+                    <label class="text-sm text-light">ประเภทผู้ใช้:</label>
+                    <select id="adminAddType" class="input-field" style="width:100%; padding:6px; font-size:0.9rem;" onchange="toggleAdminInputType()">
+                        <option value="student" selected>นักศึกษา</option>
+                        <option value="staff">บุคลากร</option>
+                        <option value="guest">บุคคลทั่วไป</option>
+                    </select>
+                </div>
+                <div id="adminApiSection">
+                    <div style="display:flex; gap:5px;">
+                        <input type="text" id="adminAddId" class="input-field" placeholder="รหัสนักศึกษา" style="width:100%;">
+                        <button class="btn btn-primary" onclick="adminSearchUser()">🔍</button>
+                    </div>
+                    <div id="adminApiResult" class="hidden"></div>
+                </div>
+                <div id="adminGuestSection" class="hidden">
+                    <input type="text" id="adminGuestName" class="input-field" placeholder="ชื่อ-สกุล" style="width:100%; margin-bottom:5px;">
+                    <input type="text" id="adminGuestId" class="input-field" placeholder="เบอร์โทร" style="width:100%;">
+                </div>
+                <div style="margin-top:10px;">
+                     <div style="display:flex; gap:15px;">
+                        <label><input type="radio" name="adminUsage" value="computer" checked onclick="toggleAdminAi(false)"> 💻 คอม</label>
+                        <label><input type="radio" name="adminUsage" value="ai" onclick="toggleAdminAi(true)"> 🤖 AI</label>
+                    </div>
+                    <div id="adminAiSelectWrapper" class="hidden" style="margin-top:5px;">
+                        <select id="adminAiTool" class="input-field" style="width:100%;">
+                            ${appConfig.softwareList.map(s => `<option value="${s}">${s}</option>`).join('')}
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                </div>
             </div>
         `;
-
-        // 🌟 สร้าง UI เลือกวัตถุประสงค์ (เหมือนหน้า Login)
-        if (container && containerWrapper) {
-            containerWrapper.classList.remove('hidden');
-            // เปลี่ยน Label ชั่วคราว
-            const label = containerWrapper.querySelector('label');
-            if(label) label.innerText = "วัตถุประสงค์การใช้งาน (สำหรับการเพิ่มผู้ใช้)";
-
-            container.className = ''; // ลบคลาส grid เดิมออก
-            container.innerHTML = `
-                <div class="radio-group" style="margin-bottom:10px; gap:5px;">
-                    <label class="selection-card usage-computer" style="padding:8px; font-size:0.85rem; flex:1;">
-                        <input type="radio" name="adminUsageType" value="computer" checked onchange="toggleAdminAiSelect(false)"> 💻 คอมฯ ทั่วไป
-                    </label>
-                    <label class="selection-card usage-ai" style="padding:8px; font-size:0.85rem; flex:1;">
-                        <input type="radio" name="adminUsageType" value="ai" onchange="toggleAdminAiSelect(true)"> 🤖 ใช้งาน AI
-                    </label>
-                </div>
-                <select id="adminAiTool" class="input-field hidden" style="padding:8px; width:100%; font-size:0.9rem; border:1px solid #9333ea;">
-                    ${appConfig.softwareList.map(s => `<option value="${s}">${s}</option>`).join('')}
-                    <option value="Other">Other</option>
-                </select>
-            `;
-        }
+    }
+    
+    const oldCheckboxes = document.getElementById('modalSoftwareCheckboxes');
+    if(oldCheckboxes && oldCheckboxes.parentElement) {
+        oldCheckboxes.parentElement.style.display = 'none';
     }
 
     modal.classList.add('show');
 }
 
-// 🌟 SAVE LOGIC (UPDATED)
 async function saveDeskDetails() {
     if (!currentEditingDesk) return;
-    
     const status = document.getElementById('deskStatusSelect').value;
-    
-    // Check Admin Check-in Data
-    const adminName = document.getElementById('adminAddName')?.value.trim();
-    const adminId = document.getElementById('adminAddId')?.value.trim();
-    
-    if (adminName && adminId) {
-        // --- Perform Check-in ---
-        const type = document.getElementById('adminAddType').value;
-        
-        // Get Purpose
-        const usageEl = document.querySelector('input[name="adminUsageType"]:checked');
-        let purpose = 'Com';
-        if (usageEl && usageEl.value === 'ai') {
-            const tool = document.getElementById('adminAiTool').value;
-            purpose = `AI: ${tool}`;
-        }
+    const userType = document.getElementById('adminAddType')?.value;
+    let payload = null;
 
-        const payload = {
-            name: adminName,
-            stdId: adminId,
-            faculty: 'Admin Added',
-            year: '-',
-            type: type,
-            desk: currentEditingDesk,
-            purpose: purpose
+    if (userType !== 'guest' && tempApiUser) {
+        const usageEl = document.querySelector('input[name="adminUsage"]:checked');
+        let purpose = 'Com';
+        if (usageEl && usageEl.value === 'ai') purpose = `AI: ${document.getElementById('adminAiTool').value}`;
+        payload = {
+            name: tempApiUser.name, stdId: tempApiUser.stdId, faculty: tempApiUser.faculty, year: tempApiUser.year,
+            type: userType, desk: currentEditingDesk, purpose: purpose
         };
+    } else if (userType === 'guest') {
+        const gName = document.getElementById('adminGuestName').value.trim();
+        const gId = document.getElementById('adminGuestId').value.trim();
+        if (gName && gId) {
+            const usageEl = document.querySelector('input[name="adminUsage"]:checked');
+            let purpose = 'Com';
+            if (usageEl && usageEl.value === 'ai') purpose = `AI: ${document.getElementById('adminAiTool').value}`;
+            payload = {
+                name: gName, stdId: gId, faculty: 'บุคคลทั่วไป', year: '-',
+                type: 'guest', desk: currentEditingDesk, purpose: purpose
+            };
+        }
+    }
+
+    if (payload) {
         await apiCheckIn(payload);
     } else {
-        // --- Update Desk Status Only ---
         if (!deskConfig[currentEditingDesk]) deskConfig[currentEditingDesk] = {};
         deskConfig[currentEditingDesk].status = status;
-        // ลบส่วนบันทึก Software ออก เพราะเปลี่ยนเป็น Purpose แล้ว
-        
         localStorage.setItem(DESK_CONFIG_KEY, JSON.stringify(deskConfig));
     }
     
@@ -377,6 +505,7 @@ async function saveDeskDetails() {
 function closeDeskModal() {
     document.getElementById('deskModal').classList.remove('show');
     currentEditingDesk = null;
+    tempApiUser = null;
 }
 
 async function forceCheckoutFromModal(userId) {
@@ -537,7 +666,7 @@ function updateStats() {
     let totalSeats = 0;
     if (appConfig && appConfig.zones) {
         appConfig.zones.forEach(z => totalSeats += z.count);
-    } else { totalSeats = 60; }
+    } else { totalSeats = 30; } // 🌟 แก้ไข: Default เป็น 30
 
     const elActive = document.getElementById('statActive');
     if(elActive) {
@@ -702,13 +831,14 @@ function exportReportCSV() {
 }
 
 // ============================================
-// 7. USER SIDE CONTROLLER (Login Page)
+// 8. USER SIDE CONTROLLER (Login Page)
 // ============================================
 async function handleCheckIn(e) {
     if(e) e.preventDefault();
     const idInput = document.getElementById('studentId');
     if(!idInput) return;
     const id = idInput.value.trim();
+    
     if (id.length < 3) { alert("กรุณากรอกข้อมูลให้ครบถ้วน"); return; }
 
     const submitBtn = document.querySelector('button[type="submit"]');
@@ -721,16 +851,19 @@ async function handleCheckIn(e) {
 
     let userData = { name: `ผู้ใช้งาน (${id})`, faculty: 'บุคคลทั่วไป', year: '-', type: 'guest' };
 
-    // Logic แยกประเภท (API or Guest)
+    // 🌟 2. Logic แยกประเภท (API or Guest)
     if (selectedCategory === 'staff') {
         const apiInfo = await fetchStudentInfo(id);
+        
+        // แก้ไข: เช็ค data ก่อนใช้งาน
         if (apiInfo && apiInfo.data) { 
             const d = apiInfo.data;
             const prefix = d.USERPREFIXNAME || '';
             const fname = d.USERNAME || '';
             const lname = d.USERSURNAME || '';
-            userData.name = `${prefix}${fname} ${lname}`;
-            userData.faculty = d.FACULTYNAME;
+            userData.name = `${prefix}${fname} ${lname} (${id})`;
+            userData.faculty = d.FACULTYNAME || 'ไม่ระบุ';
+            
             if (d.USERTYPE === 'นักศึกษา') {
                 userData.type = 'student';
                 userData.year = d.STUDENTYEAR;
@@ -739,8 +872,20 @@ async function handleCheckIn(e) {
             } else {
                 userData.type = 'staff'; 
             }
+        } else {
+            // กรณี API ไม่เจอ: ใช้ Mock Fallback (เพื่อให้เห็นว่าระบบทำงาน)
+            // หรือจะ Alert แจ้งเตือนก็ได้
+            console.log("API not found, using fallback");
+            if(STUDENT_DB[id]) {
+                const m = STUDENT_DB[id];
+                userData.name = `${m.name} (${id})`;
+                userData.faculty = m.faculty;
+                userData.year = m.year;
+                userData.type = 'student';
+            }
         }
     } else {
+        // Guest
         const nameInput = document.getElementById('username');
         const surInput = document.getElementById('surname');
         if (nameInput && surInput && nameInput.value && surInput.value) {
