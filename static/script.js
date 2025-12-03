@@ -1,28 +1,13 @@
-// --- script.js (Final Version: Fixed Year Calculation & Mock Data) ---
+// --- script.js (Full Version: Admin Monitor + User Map + Report + Config) ---
 
 const STORAGE_KEY = 'lab_access_db_v2';
 const DESK_CONFIG_KEY = 'lab_desk_config';
 const APP_CONFIG_KEY = 'lab_app_config';
 
-// 🌟 1. แก้ไข Mock Data (เพิ่มรหัส 68114540227 ตามที่ขอ)
-const STUDENT_DB = {
-    "68114540083": { name: "เขมมิกา พันธ์แก่น", faculty: "วิทยาศาสตร์", year: "1" },
-    "68114540353": { name: "ปภังกร นิชรัตน์", faculty: "วิทยาศาสตร์", year: "1" },
-    "68114540227": { name: "ทดสอบ ระบบ", faculty: "วิทยาศาสตร์", year: "1" }, // ✅ เพิ่มให้แล้ว (ถ้า API จริงดึงได้ จะใช้ชื่อจริงทับอันนี้)
-    
-    // ตัวอย่างปี 3 (รหัสขึ้นต้น 66)
-    "66114540001": { name: "สมชาย ใจดี", faculty: "วิศวกรรมศาสตร์", year: "3" },
-    // ตัวอย่างปี 4 (รหัสขึ้นต้น 65)
-    "65114540002": { name: "สมหญิง รักเรียน", faculty: "บริหารศาสตร์", year: "4" },
-    // ตัวอย่างปี 5 (รหัสขึ้นต้น 64 - สำหรับคณะที่เรียน 5-6 ปี)
-    "64114540003": { name: "มานะ อดทน", faculty: "เภสัชศาสตร์", year: "5" },
-    
-    "admin": { name: "Admin Staff", faculty: "สำนักคอมฯ", year: "-" }
-};
-
 // Global Variables
 let dbData = [];
 let deskConfig = {}; 
+// 🌟 Config เริ่มต้น (ใช้ค่านี้ถ้า LocalStorage ว่าง)
 let appConfig = {
     zones: [{ id: 'A', count: 10 }, { id: 'B', count: 10 }, { id: 'C', count: 10 }],
     softwareList: [
@@ -36,23 +21,26 @@ let currentSortCol = 'checkIn';
 let currentSortDir = 'desc';
 let currentMonitorView = 'table'; 
 let currentEditingDesk = null;
-let tempApiUser = null;
+let tempApiUser = null; 
 
 // ============================================
 // 1. API CONNECTION & CONFIG LOAD
 // ============================================
 async function loadAllData() {
     try {
+        // 1. โหลด Config (App & Desk) จาก LocalStorage
         const storedApp = localStorage.getItem(APP_CONFIG_KEY);
         if (storedApp) {
             const parsed = JSON.parse(storedApp);
-            if (parsed.zones && parsed.zones.length > 0) appConfig.zones = parsed.zones;
-            if (parsed.softwareList && parsed.softwareList.length > 0) appConfig.softwareList = parsed.softwareList;
+            if (parsed.zones && parsed.zones.length > 0) {
+                appConfig = parsed;
+            }
         }
         
         const storedDesk = localStorage.getItem(DESK_CONFIG_KEY);
         if (storedDesk) deskConfig = JSON.parse(storedDesk);
 
+        // 2. โหลด Logs จาก Server
         const response = await fetch(`/api/logs?t=${new Date().getTime()}`);
         if (!response.ok) throw new Error('Network response was not ok');
         return await response.json();
@@ -65,14 +53,8 @@ async function loadAllData() {
 async function fetchStudentInfo(stdId) {
     try {
         const response = await fetch(`/api/student-info/${stdId}`);
-        if (response.ok) {
-            return await response.json();
-        } else {
-            console.warn("API Error Status:", response.status);
-        }
-    } catch (error) {
-        console.error("Fetch Error (Check VPN):", error);
-    }
+        if (response.ok) return await response.json();
+    } catch (error) {}
     return null;
 }
 
@@ -100,6 +82,7 @@ if (document.getElementById('viewMonitor')) {
         console.log("Admin Dashboard Loaded");
         dbData = await loadAllData();
         
+        // Init Monitor & Config UI
         populateDropdowns();
         renderConfigUI(); 
         renderMonitorData();
@@ -115,6 +98,7 @@ if (document.getElementById('viewMonitor')) {
             updateReport();
         }
 
+        // Auto Refresh
         setInterval(async () => {
             if(!document.getElementById('viewMonitor').classList.contains('hidden')){
                 const modal = document.getElementById('deskModal');
@@ -198,7 +182,7 @@ function renderMonitorData() {
 }
 
 // ============================================
-// 4. SETTINGS & CONFIG UI LOGIC (Admin Config)
+// 4. SETTINGS & CONFIG UI LOGIC
 // ============================================
 function renderConfigUI() {
     const zoneCont = document.getElementById('zoneConfigContainer');
@@ -232,9 +216,9 @@ function addZone() {
         saveAppConfig();
         document.getElementById('newZoneName').value = '';
         document.getElementById('newZoneCount').value = '';
-    } else { alert('กรุณากรอกข้อมูลให้ครบ'); }
+    } else { alert('กรุณากรอกชื่อโซนและจำนวนให้ถูกต้อง'); }
 }
-function removeZone(index) { if(confirm('ยืนยันลบโซน?')) { appConfig.zones.splice(index, 1); saveAppConfig(); } }
+function removeZone(index) { if(confirm('ยืนยันการลบโซนนี้?')) { appConfig.zones.splice(index, 1); saveAppConfig(); } }
 
 function addSoftware() {
     const name = document.getElementById('newSoftwareName').value.trim();
@@ -254,7 +238,7 @@ function saveAppConfig() {
 }
 
 // ============================================
-// 5. MAP RENDER & DESK MANAGEMENT
+// 5. ADMIN MAP RENDER & DESK MANAGEMENT
 // ============================================
 function renderDeskMap() {
     const container = document.getElementById('deskMapContainer');
@@ -262,10 +246,12 @@ function renderDeskMap() {
     container.innerHTML = '';
 
     const activeUsers = dbData.filter(u => u.status === 'active');
-    // 🌟 แก้ไข Fallback เป็น 10 ที่นั่งต่อโซน
-    const zones = (appConfig.zones && appConfig.zones.length > 0) 
-                  ? appConfig.zones 
-                  : [{ id: 'A', count: 10 }, { id: 'B', count: 10 }, { id: 'C', count: 10 }];
+    const zones = appConfig.zones || [];
+
+    if (zones.length === 0) {
+        container.innerHTML = '<div style="text-align:center; padding:20px; color:#666;">ยังไม่มีการตั้งค่าโซน</div>';
+        return;
+    }
 
     zones.forEach(zone => {
         const zoneDiv = document.createElement('div');
@@ -304,6 +290,8 @@ function renderDeskMap() {
                     let toolName = user.purpose.split(':')[1]?.trim() || 'AI';
                     innerHTML += `<div class="desk-software-tag" style="background:#f3e8ff; color:#7e22ce; border:1px solid #d8b4fe;">🤖 ${toolName}</div>`;
                 }
+            } else if (config.software && config.software.length > 0) {
+                innerHTML += `<div class="desk-software-tag" title="${config.software.join(', ')}">Apps: ${config.software.length}</div>`;
             }
 
             deskItem.innerHTML = innerHTML;
@@ -313,8 +301,6 @@ function renderDeskMap() {
         container.appendChild(zoneDiv);
     });
 }
-
-// --- Modal & Admin Check-in Logic ---
 
 window.toggleAdminAi = function(show) {
     const el = document.getElementById('adminAiSelectWrapper');
@@ -328,6 +314,7 @@ window.toggleAdminInputType = function() {
     tempApiUser = null;
     document.getElementById('adminApiResult').classList.add('hidden');
     document.getElementById('adminAddId').value = '';
+
     if (type === 'guest') {
         guestSection.classList.remove('hidden');
         apiSection.classList.add('hidden');
@@ -360,7 +347,7 @@ window.adminSearchUser = async function() {
         
         tempApiUser = {
             name: `${prefix}${fname} ${lname} (${stdId})`,
-            faculty: d.FACULTYNAME || 'ไม่ระบุ',
+            faculty: d.FACULTYNAME || d.DEPARTMENTNAME || 'ไม่ระบุ',
             year: d.STUDENTYEAR || '-',
             type: document.getElementById('adminAddType').value,
             stdId: stdId
@@ -368,9 +355,8 @@ window.adminSearchUser = async function() {
         resultDiv.innerHTML = `<div style="background:#e0f2fe; padding:8px; border-radius:6px; margin-top:5px;"><p class="text-sm text-success">✅ พบข้อมูล: ${tempApiUser.name}</p></div>`;
     } else {
         tempApiUser = null;
-        resultDiv.innerHTML = `<p class="text-sm" style="color:var(--danger)">❌ ไม่พบข้อมูล (จะใช้ Mockup แทนถ้ามี)</p>`;
-        
-        // Mock Fallback for Admin Search
+        resultDiv.innerHTML = `<p class="text-sm" style="color:var(--danger)">❌ ไม่พบข้อมูล</p>`;
+        // Fallback Mock
         if(STUDENT_DB[stdId]) {
             const m = STUDENT_DB[stdId];
             tempApiUser = { name: `${m.name} (${stdId})`, faculty: m.faculty, year: m.year, type: document.getElementById('adminAddType').value, stdId: stdId };
@@ -388,6 +374,7 @@ function openDeskModal(deskId, user, config) {
     const userInfoSec = document.getElementById('userInfoSection');
 
     if (user) {
+        // Occupied
         statusSelect.value = 'occupied';
         statusSelect.disabled = true; 
         userInfoSec.classList.remove('hidden');
@@ -402,6 +389,7 @@ function openDeskModal(deskId, user, config) {
             </button>
         `;
     } else {
+        // Available / Maintenance / Reserved
         statusSelect.disabled = false;
         statusSelect.value = config.status === 'maintenance' ? 'maintenance' : (config.status === 'reserved' ? 'reserved' : 'available');
         
@@ -414,13 +402,14 @@ function openDeskModal(deskId, user, config) {
         }
 
         userInfoSec.classList.remove('hidden');
+        // Admin Check-in Form
         userInfoSec.innerHTML = `
             <div style="border-top:1px dashed #ddd; padding-top:10px; margin-top:5px;">
-                <p class="font-bold text-sm mb-2" style="color:var(--primary);">Admin Check-in (เพิ่มผู้ใช้)</p>
+                <p class="font-bold text-sm mb-2" style="color:var(--primary);">Admin Check-in</p>
                 <div style="margin-bottom:8px;">
-                    <label class="text-sm text-light">ประเภทผู้ใช้:</label>
-                    <select id="adminAddType" class="input-field" style="width:100%; padding:6px; font-size:0.9rem;" onchange="toggleAdminInputType()">
-                        <option value="student" selected>นักศึกษา</option>
+                    <label class="text-sm text-light">ประเภท:</label>
+                    <select id="adminAddType" class="input-field" style="width:100%; padding:6px;" onchange="toggleAdminInputType()">
+                        <option value="student">นักศึกษา</option>
                         <option value="staff">บุคลากร</option>
                         <option value="guest">บุคคลทั่วไป</option>
                     </select>
@@ -452,11 +441,27 @@ function openDeskModal(deskId, user, config) {
         `;
     }
     
-    const oldCheckboxes = document.getElementById('modalSoftwareCheckboxes');
-    if(oldCheckboxes && oldCheckboxes.parentElement) {
-        oldCheckboxes.parentElement.style.display = 'none';
+    // Generate Checkboxes
+    const container = document.getElementById('modalSoftwareCheckboxes');
+    if (container) {
+        container.innerHTML = '';
+        const installed = config.software || [];
+        const softwareList = appConfig.softwareList || [];
+        softwareList.forEach(sw => {
+            const div = document.createElement('div');
+            div.style.cssText = "display:flex; align-items:center; gap:6px; font-size:0.9rem;";
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.value = sw;
+            if (installed.includes(sw)) cb.checked = true;
+            div.appendChild(cb);
+            div.appendChild(document.createTextNode(sw));
+            container.appendChild(div);
+        });
+        // Show if user not present
+        if(user) container.parentElement.style.display = 'none';
+        else container.parentElement.style.display = 'block';
     }
-
     modal.classList.add('show');
 }
 
@@ -493,6 +498,10 @@ async function saveDeskDetails() {
     } else {
         if (!deskConfig[currentEditingDesk]) deskConfig[currentEditingDesk] = {};
         deskConfig[currentEditingDesk].status = status;
+        
+        const checkboxes = document.querySelectorAll('#modalSoftwareCheckboxes input[type="checkbox"]:checked');
+        deskConfig[currentEditingDesk].software = Array.from(checkboxes).map(cb => cb.value);
+        
         localStorage.setItem(DESK_CONFIG_KEY, JSON.stringify(deskConfig));
     }
     
@@ -509,7 +518,7 @@ function closeDeskModal() {
 }
 
 async function forceCheckoutFromModal(userId) {
-    if(confirm("ยืนยันการ Check-out ผู้ใช้งานรายนี้?")) {
+    if(confirm("ยืนยันการ Check-out?")) {
         await apiCheckOut(userId);
         dbData = await loadAllData(); 
         closeDeskModal();
@@ -519,12 +528,13 @@ async function forceCheckoutFromModal(userId) {
 }
 
 // ============================================
-// 5. MONITOR TABLE & STATS
+// 6. MONITOR TABLE & STATS
 // ============================================
 function renderMonitorTable() {
     const tableBody = document.getElementById('userTableBody');
     if(!tableBody) return;
-
+    
+    // Get Filters
     const timeFilter = document.getElementById('timeFilter')?.value || 'today';
     const typeFilter = document.getElementById('typeFilter')?.value || 'all';
     const facultyFilter = document.getElementById('facultyFilter')?.value || 'all';
@@ -537,20 +547,15 @@ function renderMonitorTable() {
     let filtered = dbData.filter(u => {
         let matchTime = true;
         if(timeFilter === 'today') matchTime = (u.date === todayStr);
-
+        
         let matchType = (typeFilter === 'all') || (u.type === typeFilter);
         let matchFaculty = (facultyFilter === 'all') || (u.faculty === facultyFilter);
         let matchYear = true;
-        if (yearFilter !== 'all') {
-            if (yearFilter === 'other') matchYear = !['1','2','3','4'].includes(u.year); 
-            else matchYear = (u.year === yearFilter);
-        }
+        if (yearFilter !== 'all') { if (yearFilter === 'other') matchYear = !['1','2','3','4'].includes(u.year); else matchYear = (u.year === yearFilter); }
         let matchZone = (zoneFilter === 'all') || (u.desk && u.desk.toUpperCase().startsWith(zoneFilter));
         let matchStatus = (statusFilter === 'all') || (u.status === statusFilter);
-        let matchSearch = !searchVal || 
-                          (u.name && u.name.toLowerCase().includes(searchVal)) || 
-                          (u.stdId && u.stdId.toLowerCase().includes(searchVal));
-
+        let matchSearch = !searchVal || (u.name && u.name.toLowerCase().includes(searchVal)) || (u.stdId && u.stdId.toLowerCase().includes(searchVal));
+        
         return matchTime && matchType && matchFaculty && matchYear && matchZone && matchStatus && matchSearch;
     });
 
@@ -564,48 +569,29 @@ function renderMonitorTable() {
     });
 
     tableBody.innerHTML = '';
-    if(filtered.length === 0) {
-        document.getElementById('noDataMessage')?.classList.remove('hidden');
-    } else {
-        document.getElementById('noDataMessage')?.classList.add('hidden');
-        filtered.forEach(user => {
-            const tr = document.createElement('tr');
-            const isChecked = user.status === 'active' ? 'checked' : '';
-            const isDisabled = user.status === 'completed' ? 'disabled' : '';
-            
-            let badgeClass = 'badge-guest';
-            let typeLabel = user.type;
-            if (user.type === 'student') { badgeClass = 'badge-student'; typeLabel = 'นักศึกษา'; }
-            else if (user.type === 'teacher') { badgeClass = 'badge-teacher'; typeLabel = 'อาจารย์'; }
-            else if (user.type === 'staff') { badgeClass = 'badge-staff'; typeLabel = 'บุคลากร'; }
-            else if (user.type === 'guest') { typeLabel = 'บุคคลทั่วไป'; }
+    if(filtered.length === 0) document.getElementById('noDataMessage')?.classList.remove('hidden');
+    else document.getElementById('noDataMessage')?.classList.add('hidden');
 
-            let displayPurpose = '', purposeColor = '#0369a1';
-            if (user.purpose && user.purpose.startsWith('AI')) {
-                let tool = user.purpose.split(':')[1] || '';
-                displayPurpose = `🤖 ใช้งาน AI ${tool}`; purposeColor = '#9333ea';
-            } else { displayPurpose = `💻 คอมฯ ทั่วไป`; }
+    filtered.forEach(user => {
+        const tr = document.createElement('tr');
+        const isChecked = user.status === 'active' ? 'checked' : '';
+        const isDisabled = user.status === 'completed' ? 'disabled' : '';
+        
+        let badgeClass = 'badge-guest', typeLabel = user.type;
+        if (user.type === 'student') { badgeClass = 'badge-student'; typeLabel = 'นักศึกษา'; }
+        else if (user.type === 'teacher') { badgeClass = 'badge-teacher'; typeLabel = 'อาจารย์'; }
+        else if (user.type === 'staff') { badgeClass = 'badge-staff'; typeLabel = 'บุคลากร'; }
+        else if (user.type === 'guest') { typeLabel = 'บุคคลทั่วไป'; }
 
-            tr.innerHTML = `
-                <td>${user.checkIn}</td>
-                <td>${user.checkOut}</td>
-                <td><span style="font-weight:600">${user.name}</span></td>
-                <td><span class="badge ${badgeClass}">${typeLabel}</span></td>
-                <td style="font-family:monospace">${user.stdId}</td>
-                <td>${user.faculty}</td>
-                <td style="text-align:center">${user.year}</td>
-                <td><span class="col-desk">${user.desk}</span></td>
-                <td><span style="font-size:0.85rem; color:${purposeColor}; font-weight:500;">${displayPurpose}</span></td>
-                <td style="text-align:center">
-                    <label class="switch">
-                        <input type="checkbox" ${isChecked} ${isDisabled} onchange="toggleUserStatus(${user.id}, this)">
-                        <span class="slider"></span>
-                    </label>
-                </td>
-            `;
-            tableBody.appendChild(tr);
-        });
-    }
+        let displayPurpose = '', purposeColor = '#0369a1';
+        if (user.purpose && user.purpose.startsWith('AI')) {
+            let tool = user.purpose.split(':')[1] || '';
+            displayPurpose = `🤖 ใช้งาน AI ${tool}`; purposeColor = '#9333ea';
+        } else { displayPurpose = `💻 คอมฯ ทั่วไป`; }
+
+        tr.innerHTML = `<td>${user.checkIn}</td><td>${user.checkOut}</td><td><span style="font-weight:600">${user.name}</span></td><td><span class="badge ${badgeClass}">${typeLabel}</span></td><td style="font-family:monospace">${user.stdId}</td><td>${user.faculty}</td><td style="text-align:center">${user.year}</td><td><span class="col-desk">${user.desk}</span></td><td><span style="font-size:0.85rem; color:${purposeColor}; font-weight:500;">${displayPurpose}</span></td><td style="text-align:center"><label class="switch"><input type="checkbox" ${isChecked} ${isDisabled} onchange="toggleUserStatus(${user.id}, this)"><span class="slider"></span></label></td>`;
+        tableBody.appendChild(tr);
+    });
 }
 
 function populateDropdowns() {
@@ -635,9 +621,6 @@ function resetFilters() {
 function handleSort(column) {
     if (currentSortCol === column) { currentSortDir = currentSortDir === 'asc' ? 'desc' : 'asc'; } 
     else { currentSortCol = column; currentSortDir = 'asc'; }
-    document.querySelectorAll('.sort-icon').forEach(icon => icon.innerText = '↕');
-    const header = document.querySelector(`th[onclick="handleSort('${column}')"] .sort-icon`);
-    if(header) header.innerText = currentSortDir === 'asc' ? '↑' : '↓';
     renderMonitorData();
 }
 
@@ -666,7 +649,7 @@ function updateStats() {
     let totalSeats = 0;
     if (appConfig && appConfig.zones) {
         appConfig.zones.forEach(z => totalSeats += z.count);
-    } else { totalSeats = 30; } // 🌟 แก้ไข: Default เป็น 30
+    } else { totalSeats = 30; }
 
     const elActive = document.getElementById('statActive');
     if(elActive) {
@@ -689,7 +672,7 @@ function exportCSV() {
 }
 
 // ============================================
-// 6. REPORT LOGIC
+// 7. REPORT LOGIC
 // ============================================
 function initChart() {
     const ctx = document.getElementById('usageChart');
@@ -804,41 +787,22 @@ function parseTime(timeStr) {
     return h * 60 + m;
 }
 
-function exportReportCSV() {
-    const reportType = document.getElementById('reportType').value;
-    const dateInput = document.getElementById('reportDate').value;
-    const selectedDate = new Date(dateInput);
-    const selYear = selectedDate.getFullYear();
-    
-    let filtered = dbData.filter(u => {
-        const d = new Date(u.date);
-        if (reportType === 'daily') return d.toDateString() === selectedDate.toDateString();
-        if (reportType === 'monthly') return d.getFullYear() === selYear;
-        const currentYear = new Date().getFullYear();
-        return d.getFullYear() >= (currentYear-4) && d.getFullYear() <= currentYear;
-    });
-
-    let csv = "Date,CheckIn,CheckOut,Name,Type,ID,Faculty,Status\n";
-    filtered.forEach(row => {
-        csv += `${row.date},${row.checkIn},${row.checkOut},${row.name},${row.type},${row.stdId},${row.faculty},${row.status}\n`;
-    });
-
-    const link = document.createElement("a");
-    link.href = encodeURI("data:text/csv;charset=utf-8," + csv);
-    link.download = `report_${reportType}.csv`;
-    document.body.appendChild(link);
-    link.click();
-}
-
 // ============================================
 // 8. USER SIDE CONTROLLER (Login Page)
 // ============================================
+// Mock Student DB
+const STUDENT_DB = {
+    "68114540083": { name: "เขมมิกา พันธ์แก่น", faculty: "วิทยาศาสตร์", year: "1" },
+    "68114540353": { name: "ปภังกร นิชรัตน์", faculty: "วิทยาศาสตร์", year: "1" },
+    "68114540227": { name: "ทดสอบ ระบบ", faculty: "วิทยาศาสตร์", year: "1" },
+    "admin": { name: "Admin Staff", faculty: "สำนักคอมฯ", year: "-" }
+};
+
 async function handleCheckIn(e) {
     if(e) e.preventDefault();
     const idInput = document.getElementById('studentId');
     if(!idInput) return;
     const id = idInput.value.trim();
-    
     if (id.length < 3) { alert("กรุณากรอกข้อมูลให้ครบถ้วน"); return; }
 
     const submitBtn = document.querySelector('button[type="submit"]');
@@ -851,11 +815,10 @@ async function handleCheckIn(e) {
 
     let userData = { name: `ผู้ใช้งาน (${id})`, faculty: 'บุคคลทั่วไป', year: '-', type: 'guest' };
 
-    // 🌟 2. Logic แยกประเภท (API or Guest)
+    // Logic แยกประเภท (API or Guest)
     if (selectedCategory === 'staff') {
         const apiInfo = await fetchStudentInfo(id);
         
-        // แก้ไข: เช็ค data ก่อนใช้งาน
         if (apiInfo && apiInfo.data) { 
             const d = apiInfo.data;
             const prefix = d.USERPREFIXNAME || '';
@@ -873,9 +836,7 @@ async function handleCheckIn(e) {
                 userData.type = 'staff'; 
             }
         } else {
-            // กรณี API ไม่เจอ: ใช้ Mock Fallback (เพื่อให้เห็นว่าระบบทำงาน)
-            // หรือจะ Alert แจ้งเตือนก็ได้
-            console.log("API not found, using fallback");
+            // Fallback Mock
             if(STUDENT_DB[id]) {
                 const m = STUDENT_DB[id];
                 userData.name = `${m.name} (${id})`;
@@ -885,7 +846,6 @@ async function handleCheckIn(e) {
             }
         }
     } else {
-        // Guest
         const nameInput = document.getElementById('username');
         const surInput = document.getElementById('surname');
         if (nameInput && surInput && nameInput.value && surInput.value) {
@@ -931,5 +891,40 @@ function closeModal() {
 function switchMode(m) { 
     const v1=document.getElementById('viewManual');
     if(v1) v1.classList.remove('hidden');
+}
+// 🌟 Add this function for User Map Button
+async function openUserMapModal() {
+    document.getElementById('mapModal').classList.add('show');
+    dbData = await loadAllData(); // Load fresh data
+    renderUserMap();
+}
+function closeMapModal() {
+    document.getElementById('mapModal').classList.remove('show');
+}
+function renderUserMap() {
+    const container = document.getElementById('userMapContainer');
+    if(!container) return;
+    container.innerHTML = '';
+    const zones = (appConfig.zones && appConfig.zones.length > 0) ? appConfig.zones : [{ id: 'A', count: 10 }, { id: 'B', count: 10 }, { id: 'C', count: 10 }];
+    const activeUsers = dbData.filter(u => u.status === 'active');
+    zones.forEach(zone => {
+        const zoneDiv = document.createElement('div'); zoneDiv.style.marginBottom = '15px';
+        zoneDiv.innerHTML = `<div style="font-weight:bold; margin-bottom:5px;">โซน ${zone.id}</div>`;
+        const grid = document.createElement('div'); grid.style.display = 'grid'; grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(50px, 1fr))'; grid.style.gap = '8px';
+        for (let i = 1; i <= zone.count; i++) {
+            const deskId = `${zone.id}-${i.toString().padStart(2, '0')}`;
+            const user = activeUsers.find(u => u.desk === deskId || u.desk === `${zone.id}-${i}`);
+            const config = deskConfig[deskId] || {};
+            const box = document.createElement('div');
+            let bg = '#fff'; let border = '#ccc';
+            if (user) { bg = '#f0fdf4'; border = '#16a34a'; }
+            else if (config.status === 'maintenance') { bg = '#fef2f2'; border = '#ef4444'; }
+            else if (config.status === 'reserved') { bg = '#fffbeb'; border = '#f59e0b'; }
+            box.style.cssText = `aspect-ratio: 1/1; background: ${bg}; border: 1px solid ${border}; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; color: #666;`;
+            box.innerText = i;
+            grid.appendChild(box);
+        }
+        zoneDiv.appendChild(grid); container.appendChild(zoneDiv);
+    });
 }
 function generateLoginQR() {}
