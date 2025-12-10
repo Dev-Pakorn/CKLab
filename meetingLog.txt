@@ -1,0 +1,6 @@
+68-12-04
+    > ทำ process flow
+    > ทำ usecase
+    > ทำ functional requirement & non-functional req
+    > next meet : 68-12-08 @ 10:00am
+        expected: complete above
