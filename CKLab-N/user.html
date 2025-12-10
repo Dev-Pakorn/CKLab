@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <title>User Check-in</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- เชื่อมต่อไฟล์ CSS ที่แยกออกมา -->
+    <link href="user_style.css" rel="stylesheet">
+</head>
+<body>
+
+    <!-- ส่วนจำลอง (Simulation) เพื่อให้เลือกเครื่องได้ใน Prototype -->
+    <div class="simulation-bar">
+        🛠️ Simulation Mode: คุณกำลังนั่งอยู่ที่เครื่อง 
+        <select id="simPC" style="background:#555; color:white; border:none;">
+            <!-- JS จะโหลดรายชื่อเครื่องมาใส่ -->
+        </select>
+    </div>
+
+    <!-- MAIN APP -->
+    <div class="container">
+        
+        <!-- STEP 1: CHECK-IN & IDENTIFICATION -->
+        <div id="step1" class="step-section active">
+            <div class="card kiosk-card">
+                <div class="kiosk-header">
+                    <h4>📍 CKLab Check-in</h4>
+                    <small>กรุณาระบุตัวตนเพื่อเข้าใช้งาน</small>
+                </div>
+                <div class="card-body p-4">
+                    <ul class="nav nav-pills nav-fill mb-3" role="tablist">
+                        <li class="nav-item"><button class="nav-link active" onclick="switchTab('internal')">ผู้ใช้ภายใน</button></li>
+                        <li class="nav-item"><button class="nav-link" onclick="switchTab('external')">บุคคลทั่วไป</button></li>
+                    </ul>
+
+                    <!-- 1.1 Internal User (API Check) -->
+                    <div id="formInternal">
+                        <div class="mb-3">
+                            <label class="form-label text-muted">UBU WiFi / รหัสนักศึกษา</label>
+                            <div class="input-group">
+                                <input type="text" id="intId" class="form-control form-control-lg" placeholder="เช่น 66123456">
+                                <button onclick="checkInternal()" class="btn btn-primary">ตรวจสอบ</button>
+                            </div>
+                        </div>
+                        <!-- Result Box -->
+                        <div id="apiResult" class="alert alert-secondary border-0" style="display:none;">
+                            <h5 class="text-primary mb-1" id="apiName">...</h5>
+                            <small class="d-block text-muted">คณะ: <span id="apiFac">-</span></small>
+                            <small class="d-block text-muted">ชั้นปี: <span id="apiYear">-</span> | ระดับ: <span id="apiLevel">-</span></small>
+                            <button onclick="goToStep(2)" class="btn btn-success w-100 mt-3">ถูกต้อง (ถัดไป)</button>
+                        </div>
+                    </div>
+
+                    <!-- 1.2 External User (Manual Input) -->
+                    <div id="formExternal" style="display:none;">
+                        <div class="mb-2"><input type="text" id="extCard" class="form-control" placeholder="เลขบัตรประชาชน"></div>
+                        <div class="mb-2"><input type="text" id="extName" class="form-control" placeholder="ชื่อ-นามสกุล"></div>
+                        <div class="mb-3"><input type="text" id="extOrg" class="form-control" placeholder="หน่วยงาน"></div>
+                        <button onclick="checkExternal()" class="btn btn-primary w-100">ถัดไป</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- STEP 2: INPUT DATA (Status) -->
+        <div id="step2" class="step-section">
+            <div class="card kiosk-card">
+                <div class="kiosk-header bg-success">
+                    <h4>📝 ข้อมูลการใช้งาน</h4>
+                    <small>ยินดีต้อนรับ: <span id="showUserName">...</span></small>
+                </div>
+                <div class="card-body p-4">
+                    
+                    <!-- 2.1 สถานะ (Status) - ตรงตาม Flow -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">สถานะการจอง</label>
+                        <select id="bookingType" class="form-select form-select-lg">
+                            <option value="walk_in">Walk-in (มาใช้งานทันที)</option>
+                            <option value="booking">Booking (จองล่วงหน้า)</option>
+                        </select>
+                    </div>
+
+                    <div class="d-flex gap-2 mt-4">
+                        <button onclick="goToStep(1)" class="btn btn-light w-50">ย้อนกลับ</button>
+                        <button onclick="confirmCheckIn()" class="btn btn-success w-50 fw-bold">ยืนยัน (Start)</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- STEP 3: USAGE -->
+        <div id="step3" class="step-section">
+            <div class="card kiosk-card text-center p-5 bg-dark text-white">
+                <div class="mb-3 display-1">⏱️</div>
+                <h1 id="timer" class="mb-3 display-3 fw-bold">00:00:00</h1>
+                <p class="text-white-50">คุณกำลังใช้งานเครื่อง</p>
+                <h3 id="currentPCDisplay" class="text-warning mb-5">...</h3>
+                
+                <button onclick="goToStep(4)" class="btn btn-danger btn-lg w-100 py-3 shadow">Check-out (เลิกใช้งาน)</button>
+            </div>
+        </div>
+
+        <!-- STEP 4: FEEDBACK & END -->
+        <div id="step4" class="step-section">
+            <div class="card kiosk-card text-center p-4">
+                <h3 class="mb-3 text-primary">🌟 ความพึงพอใจ</h3>
+                <p class="text-muted">กรุณาให้คะแนนก่อนออกจากระบบ</p>
+                
+                <div class="fs-1 text-warning mb-4" style="cursor: pointer;">
+                    <span onclick="setRate(1)">★</span>
+                    <span onclick="setRate(2)">★</span>
+                    <span onclick="setRate(3)">★</span>
+                    <span onclick="setRate(4)">★</span>
+                    <span onclick="setRate(5)">★</span>
+                </div>
+                <p>คะแนนของคุณ: <strong id="rateDisplay" class="fs-4">5</strong> / 5</p>
+
+                <button onclick="submitFeedback()" class="btn btn-primary btn-lg w-100 mt-3">ส่งแบบประเมินและจบการทำงาน</button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- เชื่อมต่อไฟล์ JS แยก -->
+    <script src="user_script.js"></script>
+</body>
+</html>
